@@ -1,0 +1,12 @@
+# Ignorar directorios de construcción
+build/
+compile_commands.json 
+data/
+.cache/
+historyCNN/
+# Archivos generados por CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+vit_fashion_mnist*

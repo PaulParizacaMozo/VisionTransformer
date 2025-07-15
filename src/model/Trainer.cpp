@@ -1,0 +1,167 @@
+#include "model/Trainer.hpp"
+#include <algorithm> // Para std::random_shuffle
+#include <ctime>     // Para std::time
+#include <iomanip>
+#include <iostream>
+#include <limits>  // Para std::numeric_limits
+#include <numeric> // Para std::iota
+#include <stdexcept>
+
+// --- Función Auxiliar (privada a este archivo usando un namespace anónimo) ---
+namespace {
+/**
+ * @brief Calcula la precisión de las predicciones de un batch.
+ * @param logits Las salidas del modelo (antes de softmax).
+ * @param labels Las etiquetas verdaderas en formato one-hot.
+ * @return La precisión como un valor flotante entre 0.0 y 1.0.
+ */
+float calculate_accuracy(const Tensor &logits, const Tensor &labels) {
+  size_t batch_size = logits.getShape()[0];
+  if (batch_size == 0)
+    return 0.0f;
+  size_t correct_predictions = 0;
+
+  for (size_t i = 0; i < batch_size; ++i) {
+    // Encontrar el índice de la clase con la mayor puntuación (argmax)
+    float max_logit = -std::numeric_limits<float>::infinity();
+    int pred_class = -1;
+    for (size_t j = 0; j < logits.getShape()[1]; ++j) {
+      if (logits(i, j) > max_logit) {
+        max_logit = logits(i, j);
+        pred_class = j;
+      }
+    }
+    // Comprobar si coincide con la etiqueta verdadera (que es 1.0 en el one-hot)
+    if (labels(i, pred_class) == 1.0f) {
+      correct_predictions++;
+    }
+  }
+  return static_cast<float>(correct_predictions) / batch_size;
+}
+} // namespace
+
+/**
+ * @brief Constructor del Trainer. Recibe una referencia al modelo y la configuración.
+ */
+/**
+ * @brief Constructor del Trainer. Recibe una referencia al modelo y la configuración.
+ */
+Trainer::Trainer(VisionTransformer &model, const TrainerConfig &train_config)
+    : model(model), // <-- Guarda la referencia
+      optimizer(train_config.learning_rate, 0.9f, 0.999f, 1e-8f, train_config.weight_decay), loss_fn(), config(train_config) {
+} /**
+   * @brief Orquesta el proceso de entrenamiento completo a lo largo de varias épocas.
+   */
+void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair<Tensor, Tensor> &test_data) {
+  const auto &[X_train, y_train] = train_data;
+  const auto &[X_test, y_test] = test_data;
+
+  for (int epoch = 0; epoch < config.epochs; ++epoch) {
+    // std::cout << "\n--- Época " << epoch + 1 << "/" << config.epochs << " --- | ";
+
+    // Ejecutar una época de entrenamiento y obtener sus métricas
+    auto [train_loss, train_acc] = train_epoch(X_train, y_train);
+
+    // Limpiar la línea de progreso de los batches
+    std::cout << "\r" << std::string(80, ' ') << "\r";
+
+    // Evaluar en el conjunto de test para obtener sus métricas
+    auto [test_loss, test_acc] = evaluate(X_test, y_test);
+
+    // Imprimir el resumen de la época en el formato solicitado
+    std::cout << "--- Época " << epoch + 1 << "/" << config.epochs << " | Train Loss: " << std::fixed << std::setprecision(4)
+              << train_loss << " | Train Acc: " << train_acc << " | Test Loss: " << test_loss << " | Test Acc: " << test_acc
+              << std::endl;
+  }
+}
+
+/**
+ * @brief Ejecuta un ciclo completo sobre el dataset de entrenamiento (una época).
+ */
+std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor &y_train) {
+  size_t num_train_samples = X_train.getShape()[0];
+  size_t num_batches = (num_train_samples + config.batch_size - 1) / config.batch_size;
+
+  float total_loss = 0.0f;
+  float total_accuracy = 0.0f;
+
+  // Crear y barajar los índices al inicio de la época
+  std::vector<size_t> indices(num_train_samples);
+  std::iota(indices.begin(), indices.end(), 0);
+  // Usar la época en la semilla asegura un barajado diferente cada vez
+  std::srand(static_cast<unsigned int>(std::time(nullptr) + config.epochs));
+  std::random_shuffle(indices.begin(), indices.end());
+
+  for (size_t i = 0; i < num_batches; ++i) {
+    size_t start_idx_in_indices = i * config.batch_size;
+    size_t count = std::min(config.batch_size, num_train_samples - start_idx_in_indices);
+    if (count == 0)
+      continue;
+
+    // Crear los tensores para el batch actual
+    Tensor X_batch({count, 1, 28, 28});
+    Tensor y_batch({count, 10});
+
+    // Llenar el batch con los datos correspondientes a los índices barajados
+    for (size_t j = 0; j < count; ++j) {
+      size_t data_idx = indices[start_idx_in_indices + j];
+      Tensor x_sample = X_train.slice(0, data_idx, 1);
+      Tensor y_sample = y_train.slice(0, data_idx, 1);
+
+      for (size_t c = 0; c < 28; ++c) {
+        for (size_t r = 0; r < 28; ++r) {
+          X_batch(j, 0, c, r) = x_sample(0, 0, c, r);
+        }
+      }
+      for (size_t c = 0; c < 10; ++c) {
+        y_batch(j, c) = y_sample(0, c);
+      }
+    }
+
+    // --- Ciclo de entrenamiento para el batch ---
+    Tensor logits = model.forward(X_batch, true);
+    total_loss += loss_fn.calculate(logits, y_batch);
+    total_accuracy += calculate_accuracy(logits, y_batch);
+
+    Tensor grad = loss_fn.backward(logits, y_batch);
+    model.backward(grad);
+
+    auto params = model.getParameters();
+    auto grads = model.getGradients();
+    optimizer.update(params, grads);
+
+    std::cout << "\rEntrenando... Batch " << i + 1 << "/" << num_batches << " " << std::flush;
+  }
+
+  return {total_loss / num_batches, total_accuracy / num_batches};
+}
+
+/**
+ * @brief Evalúa el rendimiento del modelo, calculando pérdida y precisión.
+ */
+std::pair<float, float> Trainer::evaluate(const Tensor &X_test, const Tensor &y_test) {
+  size_t num_test_samples = X_test.getShape()[0];
+  size_t num_batches = (num_test_samples + config.batch_size - 1) / config.batch_size;
+
+  float total_loss = 0.0f;
+  float total_accuracy = 0.0f;
+
+  for (size_t i = 0; i < num_batches; ++i) {
+    size_t start = i * config.batch_size;
+    size_t count = std::min(config.batch_size, num_test_samples - start);
+    if (count == 0)
+      continue;
+
+    Tensor X_batch = X_test.slice(0, start, count);
+    Tensor y_batch = y_test.slice(0, start, count);
+
+    // Forward pass en modo inferencia
+    Tensor logits = model.forward(X_batch, false);
+
+    // Calcular pérdida y precisión para el batch
+    total_loss += loss_fn.calculate(logits, y_batch);
+    total_accuracy += calculate_accuracy(logits, y_batch);
+  }
+
+  return {total_loss / num_batches, total_accuracy / num_batches};
+}
