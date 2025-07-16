@@ -22,7 +22,7 @@ Embeddings::Embeddings(size_t image_height, size_t image_width, size_t patch_siz
   clsToken = Tensor({1, 1, embedding_dim});
   clsToken.randomizeNormal(0.0f, stddev);
 
-  positionalEncoding = Tensor({1, this->num_patches, embedding_dim});
+  positionalEncoding = Tensor({1, 1+this->num_patches, embedding_dim});
   positionalEncoding.randomizeNormal(0.0f, stddev);
 
   // Inicializar gradientes
@@ -59,21 +59,34 @@ Tensor Embeddings::forward(const Tensor &input, bool isTraining) {
   std::cout << "Reshaped patches shape: " << patch_embeddings_flat.shapeToString() << std::endl;
 
   // 2. Añadir la codificación posicional
-  patch_embeddings_flat.addBroadcast(this->positionalEncoding);  // (B, N, D) + (1, N, D)
+  // patch_embeddings_flat.addBroadcast(this->positionalEncoding);  // (B, N, D) + (1, N, D)
   
-  // std::cout << "Embeddings with positional encoding shape: " << patch_embeddings_flat.shapeToString() << std::endl;
+  Tensor cls_token_batch({batchSize, 1, this->embedding_dim});
+  Tensor embeddings_with_cls = concatenate({cls_token_batch, patch_embeddings_flat}, 1); // -> {B, N+1, D}
+  std::cout << "embeddings_with_cls shape: " << embeddings_with_cls.shapeToString() << std::endl;
+  embeddings_with_cls.addBroadcast(this->positionalEncoding);
+  std::cout << "Embeddings with positional encoding shape: " << patch_embeddings_flat.shapeToString() << std::endl;
   
-  return patch_embeddings_flat; // Devolvemos los parches codificados posicionalmente
+  // return patch_embeddings_flat; // Devolvemos los parches codificados posicionalmente
+  return embeddings_with_cls;
 }
 
 
 Tensor Embeddings::backward(const Tensor &outputGradient) {
+    this->positionalEncodingGradient = outputGradient.sum(0);
+    Tensor grad_before_pos = outputGradient;
+
+    // Des-concatenar el gradiente
+    Tensor grad_cls = grad_before_pos.slice(1, 0, 1);
+    Tensor grad_patches_view = grad_before_pos.slice(1, 1, this->num_patches); // Vista no contigua
+
+    this->clsTokenGradient = grad_cls.sum(0);
     // Paso 1: Calcular el gradiente de la codificación posicional
-    this->positionalEncodingGradient = outputGradient.sum(0);  // (B, N, D) -> (1, N, D)
+    // this->positionalEncodingGradient = outputGradient.sum(0);  // (B, N, D) -> (1, N, D)
 
     // Paso 2: Eliminar el gradiente del CLS, ya que no existe
     // Simplemente, el gradiente es directamente el gradiente de los parches
-    Tensor grad_patches_view = outputGradient;  // (B, N, D) -> (B, N, D) (sin token CLS)
+    // Tensor grad_patches_view = outputGradient;  // (B, N, D) -> (B, N, D) (sin token CLS)
 
     // Paso 3: Garantizar que el tensor de gradientes de los parches sea contiguo
     Tensor grad_patches_contiguous(grad_patches_view.getShape());

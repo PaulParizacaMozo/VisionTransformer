@@ -8,46 +8,23 @@ VisionTransformer::VisionTransformer(const ViTConfig &config)
     : config(config),
       embeddings(config.image_size, config.image_size, config.patch_size, config.in_channels, config.embedding_dim),
       final_norm(config.embedding_dim), mlp_head(config.embedding_dim, config.num_classes) {
-  this->num_tokens = (config.image_size / config.patch_size) * (config.image_size / config.patch_size);
+  this->num_tokens = 1 + ((config.image_size / config.patch_size) * (config.image_size / config.patch_size));
 
   for (size_t i = 0; i < config.num_layers; ++i) {
     encoder_blocks.emplace_back(config.embedding_dim, config.num_heads, config.mlp_hidden_dim);
   }
 }
 
-// /**
-//  * @brief Encadena el forward pass de todo el modelo.
-//  */
-// Tensor VisionTransformer::forward(const Tensor &input, bool isTraining) {
-//   Tensor x = embeddings.forward(input, isTraining);
-
-//   for (auto &block : encoder_blocks) {
-//     x = block.forward(x, isTraining);
-//   }
-
-//   x = final_norm.forward(x, isTraining);
-
-//   if (isTraining) {
-//     // Guardamos la salida normalizada para el backward pass
-//     this->final_norm_output = x;
-//   }
-
-//   // Extraemos solo el token CLS (en la posición 0) para la clasificación
-//   Tensor cls_token = x.slice(1, 0, 1).contiguous().reshape({input.getShape()[0], config.embedding_dim});
-
-//   return mlp_head.forward(cls_token, isTraining);
-// }
-
+/**
+ * @brief Encadena el forward pass de todo el modelo.
+ */
 Tensor VisionTransformer::forward(const Tensor &input, bool isTraining) {
-  // Obtener los embeddings de los parches (sin token CLS)
   Tensor x = embeddings.forward(input, isTraining);
 
-  // Pasar los embeddings a través de los bloques encoder
   for (auto &block : encoder_blocks) {
     x = block.forward(x, isTraining);
   }
 
-  // Normalización final antes de la clasificación
   x = final_norm.forward(x, isTraining);
 
   if (isTraining) {
@@ -55,13 +32,36 @@ Tensor VisionTransformer::forward(const Tensor &input, bool isTraining) {
     this->final_norm_output = x;
   }
 
-  // Ahora, en lugar de extraer el token CLS, utilizamos la salida completa.
-  // Aquí se usa el promedio de todos los parches o la salida completa para la clasificación.
-  Tensor aggregated_patches = x.sum(1); // Sumar todos los parches, o puedes usar un promedio.
-  aggregated_patches = aggregated_patches.reshape({input.getShape()[0], config.embedding_dim});
+  // Extraemos solo el token CLS (en la posición 0) para la clasificación
+  Tensor cls_token = x.slice(1, 0, 1).contiguous().reshape({input.getShape()[0], config.embedding_dim});
 
-  return mlp_head.forward(aggregated_patches, isTraining);  // Usamos los parches agregados para la clasificación
+  return mlp_head.forward(cls_token, isTraining);
 }
+
+// Tensor VisionTransformer::forward(const Tensor &input, bool isTraining) {
+//   // Obtener los embeddings de los parches (sin token CLS)
+//   Tensor x = embeddings.forward(input, isTraining);
+
+//   // Pasar los embeddings a través de los bloques encoder
+//   for (auto &block : encoder_blocks) {
+//     x = block.forward(x, isTraining);
+//   }
+
+//   // Normalización final antes de la clasificación
+//   x = final_norm.forward(x, isTraining);
+
+//   if (isTraining) {
+//     // Guardamos la salida normalizada para el backward pass
+//     this->final_norm_output = x;
+//   }
+
+//   // Ahora, en lugar de extraer el token CLS, utilizamos la salida completa.
+//   // Aquí se usa el promedio de todos los parches o la salida completa para la clasificación.
+//   Tensor aggregated_patches = x.sum(1); // Sumar todos los parches, o puedes usar un promedio.
+//   aggregated_patches = aggregated_patches.reshape({input.getShape()[0], config.embedding_dim});
+
+//   return mlp_head.forward(aggregated_patches, isTraining);  // Usamos los parches agregados para la clasificación
+// }
 
 
 /**
