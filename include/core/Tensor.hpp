@@ -69,6 +69,7 @@ public:
   float *getData();
   std::string shapeToString() const;
   bool isContiguous() const;
+  void printFirstN(size_t n) const;
 
   // depuracion
   void printDebugInfo(const std::string &name) const; // NUEVA

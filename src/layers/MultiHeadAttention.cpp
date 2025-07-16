@@ -1,6 +1,7 @@
 #include "layers/MultiHeadAttention.hpp"
 #include "core/Tensor.hpp" // Para las funciones libres
 #include <cmath>           // Para std::sqrt
+#include <iostream>
 
 // Declaración de la función softmax que usaremos
 Tensor softmax(const Tensor &logits, int axis);
@@ -34,6 +35,10 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining) {
   Tensor k = k_proj->forward(input, isTraining); // -> {B, N, D}
   Tensor v = v_proj->forward(input, isTraining); // -> {B, N, D}
 
+  std::cout<<"q - Despues";  q.printFirstN(20);
+  std::cout<<"k - Despues";  k.printFirstN(20);
+  std::cout<<"v - Despues";  v.printFirstN(20);
+
   // 2. Dividir en cabezas
   // La maniobra estándar: reshape a 4D -> transpose -> reshape a 3D para BMM
 
@@ -66,6 +71,7 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining) {
 
   // 3. Atención Escalada por Producto Punto
   Tensor context = scaledDotProductAttention(q, k, v); // -> {B*h, N, d_h}
+  std::cout<<"context - Despues";  context.printFirstN(20); std::cout<<std::flush;
 
   // 4. Re-ensamblar cabezas
   // Invertimos el proceso de división
@@ -87,35 +93,35 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining) {
   return out_proj->forward(context, isTraining);
 }
 
-Tensor MultiHeadAttention::scaledDotProductAttention(const Tensor &q, const Tensor &k, const Tensor &v) {
-  // k_transposed -> {B*h, d_h, N}
-  Tensor k_transposed = k.transpose(1, 2);
+Tensor MultiHeadAttention::scaledDotProductAttention(const Tensor &q,
+                                                     const Tensor &k,
+                                                     const Tensor &v) {
+    const float scale = 1.0f / std::sqrt(static_cast<float>(this->head_dim));
 
-  // scores -> {B*h, N, N}
-  Tensor scores = batchMatrixMultiply(q, k_transposed);
-
-  float scale_factor = 1.0f / std::sqrt(static_cast<float>(this->head_dim));
-
-  // Usamos un bucle para la multiplicación por escalar.
-  // Una sobrecarga de operador T*s sería ideal en el futuro.
-  if (scores.isContiguous()) {
-    float *scores_data = scores.getData();
-#pragma omp parallel for
-    for (size_t i = 0; i < scores.getSize(); ++i) {
-      scores_data[i] *= scale_factor;
+    /* 1. Escalamos Q antes del producto punto  ----  evita overflow */
+    Tensor q_scaled = q;                      // copia liviana (misma vista)
+    if (q_scaled.isContiguous()) {
+        float* qdata = q_scaled.getData();
+        #pragma omp parallel for
+        for (size_t i = 0; i < q_scaled.getSize(); ++i)
+            qdata[i] *= scale;
+    } else {
+        for (size_t b = 0; b < q_scaled.getShape()[0]; ++b)
+            for (size_t n = 0; n < q_scaled.getShape()[1]; ++n)
+                for (size_t d = 0; d < q_scaled.getShape()[2]; ++d)
+                    q_scaled(b,n,d) *= scale;
     }
-  } else {
-    // Fallback para vistas no contiguas
-    for (size_t i = 0; i < scores.getShape()[0]; ++i)
-      for (size_t j = 0; j < scores.getShape()[1]; ++j)
-        for (size_t l = 0; l < scores.getShape()[2]; ++l)
-          scores(i, j, l) *= scale_factor;
-  }
 
-  Tensor attention = softmax(scores, 2);
-  this->attention_weights = attention;
+    /* 2. Producto punto */
+    Tensor kT = k.transpose(1,2);             // (B·h, d_h, N)
+    Tensor scores = batchMatrixMultiply(q_scaled, kT);  // (B·h, N, N)
 
-  return batchMatrixMultiply(attention, v);
+    /* 3. Soft‑max estable */
+    Tensor attn = softmax(scores, /*axis=*/2);
+    this->attention_weights = attn;           // (para backward / visualización)
+
+    /* 4. Contexto final */
+    return batchMatrixMultiply(attn, v);      // (B·h, N, d_h)
 }
 
 // Implementación de softmax (debería ir a un archivo de utilidades)

@@ -1,4 +1,5 @@
 #include "model/TransformerEncoderBlock.hpp"
+#include <iostream> 
 
 /**
  * @brief Constructor que inicializa todas las sub-capas del bloque.
@@ -19,7 +20,10 @@ Tensor TransformerEncoderBlock::forward(const Tensor &input, bool isTraining) {
 
   // Sub-capa 1: Multi-Head Attention
   Tensor x = norm1.forward(input, isTraining);
+  std::cout<<"TransformerEncoderBlock - norm1 - Despues";  x.printFirstN(20);
   x = attention.forward(x, isTraining);
+  std::cout<<"TransformerEncoderBlock - attention - Despues"; x.printFirstN(20);
+
   Tensor residual1 = input + x;
 
   if (isTraining) {
@@ -29,6 +33,7 @@ Tensor TransformerEncoderBlock::forward(const Tensor &input, bool isTraining) {
 
   // Sub-capa 2: Feed-Forward Network
   Tensor y = norm2.forward(residual1, isTraining);
+  std::cout<< "TransformerEncoderBlock - norm2 - Despues"; y.printFirstN(20);
   y = ffn.forward(y, isTraining);
   return residual1 + y;
 }

@@ -3,6 +3,8 @@
 
 #include "layers/Layer.hpp"
 #include "layers/PatchEmbedding.hpp"
+#include "layers/Conv2D.hpp"
+#include "core/Tensor.hpp"
 #include <memory>
 
 /**
@@ -29,8 +31,10 @@ public:
 
 private:
   // Capa contenida para el parcheo
-  std::unique_ptr<PatchEmbedding> patcher;
+  std::unique_ptr<PatchEmbedding> patcher; // reemplazado por Conv2D
 
+  // Capa Conv2D para proyección de parches
+  std::unique_ptr<Conv2D> conv2d;
   // Parámetros entrenables propios de esta capa
   Tensor clsToken;           // Forma {1, 1, embedding_dim}
   Tensor positionalEncoding; // Forma {1, num_patches + 1, embedding_dim}

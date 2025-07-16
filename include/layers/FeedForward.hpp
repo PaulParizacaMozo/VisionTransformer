@@ -63,7 +63,7 @@ private:
   // Las capas que componen esta red.
   // No usamos punteros aquí porque las capas son parte integral de este objeto.
   Dense dense1;
-  GELU activation;
+  ReLU activation;
   Dense dense2;
 };
 

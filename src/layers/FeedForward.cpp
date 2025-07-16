@@ -1,4 +1,5 @@
 #include "layers/FeedForward.hpp"
+#include <iostream>
 
 /**
  * @brief Constructor que inicializa las sub-capas.
@@ -16,7 +17,9 @@ FeedForward::FeedForward(size_t embedding_dim, size_t hidden_dim)
  */
 Tensor FeedForward::forward(const Tensor &input, bool isTraining) {
   Tensor x = dense1.forward(input, isTraining);
+  std::cout<<"FeedForward - dense1 - Despues";  x.printFirstN(20);
   x = activation.forward(x, isTraining);
+  std::cout<<"FeedForward - ReLU - Despues"; x.printFirstN(20);
   x = dense2.forward(x, isTraining);
   return x;
 }

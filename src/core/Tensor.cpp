@@ -579,3 +579,15 @@ void Tensor::printDebugInfo(const std::string &name) const {
   std::cout << std::endl;
   std::cout << "-------------------------" << std::endl;
 }
+
+void Tensor::printFirstN(size_t n) const {
+    const float* ptr = getData();
+    size_t offset = getDataOffset();
+    size_t size = std::min(n, totalSize);
+
+    std::cout <<": Primeros " << size << " valores del tensor:\n";
+    for (size_t i = 0; i < size; ++i) {
+        std::cout << ptr[offset + i] << " ";
+    }
+    std::cout << std::endl;
+}
