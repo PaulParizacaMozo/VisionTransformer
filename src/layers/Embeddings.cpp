@@ -16,7 +16,7 @@ Embeddings::Embeddings(size_t image_height, size_t image_width, size_t patch_siz
   size_t output_height = (image_height - patch_size) / patch_size + 1;
   size_t output_width = (image_width - patch_size) / patch_size + 1;
   this->num_patches = output_height * output_width; // Número de parches
-
+  std::cout<<"embedding::forward num_patches: "<<this->num_patches<<std::endl;
   float stddev = 0.02f;
   // Inicializar parámetros entrenables con valores pequeños aleatorios
   clsToken = Tensor({1, 1, embedding_dim});
@@ -41,6 +41,7 @@ Tensor Embeddings::forward(const Tensor &input, bool isTraining) {
   size_t outputHeight = patch_embeddings.getShape()[2];
   size_t outputWidth = patch_embeddings.getShape()[3];
   size_t num_patches = outputHeight * outputWidth;  // Número total de parches
+  std::cout<<"embedding::forward num_patches: "<<num_patches<<std::endl;
   std::cout << "Number of patches: " << num_patches << " | ";
   std::cout << "Input shape: " << input.shapeToString() << " | ";
   std::cout << "Patch embeddings shape: " << patch_embeddings.shapeToString() << " | ";

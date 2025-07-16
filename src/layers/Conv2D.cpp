@@ -1,5 +1,6 @@
 #include "layers/Conv2D.hpp"
 #include "core/Tensor.hpp"
+#include <iostream>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -12,6 +13,9 @@ Conv2D::Conv2D(size_t input_channels, size_t output_channels, size_t kernel_size
     
     bias = Tensor({output_channels});
     bias.randomizeNormal(0.0f, 0.02f);
+
+    filtersGradient = Tensor({output_channels, input_channels, kernel_size, kernel_size});
+    // filtersGradient.randomizeNormal(0.0f, 0.02f);
 }
 
 Tensor Conv2D::forward(const Tensor &input, bool isTraining) {
@@ -65,10 +69,18 @@ Tensor Conv2D::backward(const Tensor &outputGradient) {
 
     // Gradientes de los filtros
     filtersGradient = Tensor({output_channels, input_channels, kernel_size, kernel_size});
+    // Reutilizar gradientes
+    // if (filtersGradient.getShape() != std::vector<size_t>({output_channels, input_channels, kernel_size, kernel_size})) {
+    //     std::cout<<"No Reutiliza porque son diferentes!!! --------------"<<std::endl;
+    //     filtersGradient = Tensor({output_channels, input_channels, kernel_size, kernel_size});
+    // }
     filtersGradient.fill(0.0f);
 
     // Gradientes del sesgo
-    biasGradient = Tensor({output_channels});
+    // biasGradient = Tensor({output_channels});
+    if (biasGradient.getShape() != std::vector<size_t>({output_channels})) {
+        biasGradient = Tensor({output_channels});
+    }
     biasGradient.fill(0.0f);
 
     // Gradiente de la entrada (conforme con el tamaño de la entrada original)
