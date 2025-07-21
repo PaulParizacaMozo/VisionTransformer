@@ -3,7 +3,8 @@
 #include <stdexcept>
 
 Dense::Dense(size_t inputSize, size_t outputSize) {
-  float stddev = std::sqrt(2.0f / static_cast<float>(inputSize));
+  // float stddev = std::sqrt(2.0f / static_cast<float>(inputSize));
+  float stddev = 0.02f;
   this->weights = Tensor({inputSize, outputSize});
   this->weights.randomizeNormal(0.0f, stddev);
 

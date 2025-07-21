@@ -9,8 +9,8 @@ int main() {
   try {
     // --- 1. Definir Configuraciones ---
     ViTConfig model_config;
-    model_config.embedding_dim = 256; //196;
-    model_config.num_layers = 1; // 1
+    model_config.embedding_dim = 196; // 196 
+    model_config.num_layers = 1; // 2
     model_config.num_heads = 4;
     model_config.patch_size = 7;
     model_config.mlp_hidden_dim = model_config.embedding_dim * 4;
@@ -30,7 +30,7 @@ int main() {
     // auto train_data = load_csv_data("data/mnist_train.csv", 0.25f, 0.1307f, 0.3081f);
     auto [train_data, valid_data] =
     load_csv_data_train_val("data/mnist_train.csv",
-                            0.30f,   // sample_frac   → 25 % del total
+                            1.00f,   // sample_frac   → 25 % del total
                             0.80f,   // train_frac    → 80 % de ese 30%
                             0.20f,   // val_frac      → 20 % de ese 30%
                             0.1307f, 0.3081f);
