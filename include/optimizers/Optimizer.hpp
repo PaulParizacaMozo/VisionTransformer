@@ -39,6 +39,10 @@ public:
    */
   virtual void update(std::vector<Tensor *> &parameters, const std::vector<Tensor *> &gradients) = 0;
 
+  // ─── Nuevo setter ───
+  void setLearningRate(float lr) { learningRate = lr; }
+  float getLearningRate() const  { return learningRate; }
+
 protected:
   /** @brief La tasa de aprendizaje (learning rate) para el algoritmo. */
   float learningRate;

@@ -56,7 +56,7 @@ build_project() {
 
 run_app() {
   echo "--- Ejecutando la aplicación '${PROJECT_NAME}' ---"
-  ./${BUILD_DIR}/bin/${PROJECT_NAME}
+  ./${BUILD_DIR}/${PROJECT_NAME}
   echo "--- Ejecución finalizada ---"
 }
 

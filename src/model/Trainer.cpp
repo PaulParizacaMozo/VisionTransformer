@@ -6,9 +6,25 @@
 #include <limits>  // Para std::numeric_limits
 #include <numeric> // Para std::iota
 #include <stdexcept>
+#include <random>  
+#include <cmath> 
 
 // --- Función Auxiliar (privada a este archivo usando un namespace anónimo) ---
 namespace {
+
+static float cosine_warmup_lr(long long step,
+                              long long warmup_steps,
+                              long long total_steps,
+                              float    lr_max)
+{
+    if (step < warmup_steps) {
+        return lr_max * (float)step / std::max(1LL, warmup_steps);
+    }
+    float progress = (float)(step - warmup_steps)
+                   / std::max(1LL, total_steps - warmup_steps);
+    return lr_max * 0.5f * (1.0f + std::cos(M_PI * progress));
+}
+
 /**
  * @brief Calcula la precisión de las predicciones de un batch.
  * @param logits Las salidas del modelo (antes de softmax).
@@ -56,11 +72,16 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
   const auto &[X_train, y_train] = train_data;
   const auto &[X_test, y_test] = test_data;
 
+  size_t batches_per_epoch =
+        (train_data.first.getShape()[0] + config.batch_size - 1) / config.batch_size;
+    total_steps = (long long)batches_per_epoch * config.epochs;
+
   for (int epoch = 0; epoch < config.epochs; ++epoch) {
     // std::cout << "\n--- Época " << epoch + 1 << "/" << config.epochs << " --- | ";
 
     // Ejecutar una época de entrenamiento y obtener sus métricas
-    auto [train_loss, train_acc] = train_epoch(X_train, y_train);
+    // auto [train_loss, train_acc] = train_epoch(X_train, y_train);
+    auto [train_loss, train_acc] = train_epoch(X_train, y_train, epoch);
 
     // Limpiar la línea de progreso de los batches
     std::cout << "\r" << std::string(80, ' ') << "\r";
@@ -78,7 +99,7 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
 /**
  * @brief Ejecuta un ciclo completo sobre el dataset de entrenamiento (una época).
  */
-std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor &y_train) {
+std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor &y_train, int epoch) {
   size_t num_train_samples = X_train.getShape()[0];
   size_t num_batches = (num_train_samples + config.batch_size - 1) / config.batch_size;
 
@@ -89,8 +110,10 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
   std::vector<size_t> indices(num_train_samples);
   std::iota(indices.begin(), indices.end(), 0);
   // Usar la época en la semilla asegura un barajado diferente cada vez
-  std::srand(static_cast<unsigned int>(std::time(nullptr) + config.epochs));
-  std::random_shuffle(indices.begin(), indices.end());
+  // std::srand(static_cast<unsigned int>(std::time(nullptr) + config.epochs));
+  // std::random_shuffle(indices.begin(), indices.end());
+  std::mt19937 rng(static_cast<uint32_t>(epoch));   // semilla = epoch
+  std::shuffle(indices.begin(), indices.end(), rng);
 
   for (size_t i = 0; i < num_batches; ++i) {
     size_t start_idx_in_indices = i * config.batch_size;
@@ -128,9 +151,22 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
 
     auto params = model.getParameters();
     auto grads = model.getGradients();
-    optimizer.update(params, grads);
 
-    std::cout << "\rEntrenando... Batch " << i + 1 << "/" << num_batches << " " << std::flush;
+    // ─── Scheduler ───────────────────────────────
+    long long warmup_steps = (long long)(config.warmup_frac * total_steps);
+    float lr_now = cosine_warmup_lr(global_step,
+                                    warmup_steps,
+                                    total_steps,
+                                    config.lr_init);
+    optimizer.setLearningRate(lr_now);
+    // --------------------------------------------
+
+    optimizer.update(params, grads);
+    global_step++;
+
+    std::cout << "\rEntrenando... Batch " << i + 1
+              << "/" << num_batches
+              << " | LR: " << lr_now << std::flush;
   }
 
   return {total_loss / num_batches, total_accuracy / num_batches};
