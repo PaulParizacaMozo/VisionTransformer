@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include <cmath>
 
-__host__ Dense::Dense(size_t inputSize, size_t outputSize)
+Dense::Dense(size_t inputSize, size_t outputSize)
 {
     float stddev = std::sqrt(2.0f / static_cast<float>(inputSize));
 
@@ -16,7 +16,7 @@ __host__ Dense::Dense(size_t inputSize, size_t outputSize)
     this->biasGradients = Tensor({1, outputSize});
 }
 
-__host__ Tensor Dense::forward(const Tensor &input, bool isTraining)
+Tensor Dense::forward(const Tensor &input, bool isTraining)
 {
     if (isTraining)
         this->inputTensor = input; // Save input for backward
@@ -24,15 +24,18 @@ __host__ Tensor Dense::forward(const Tensor &input, bool isTraining)
     size_t inputRank = input.dims();
     if (inputRank == 3)
     {
-        size_t batchSize = input.dim(0);
-        size_t numTokens = input.dim(1);
-        size_t featuresIn = input.dim(2);
-        size_t newShape1[2] = {batchSize * numTokens, featuresIn};
-        Tensor input2D = input.reshape(newShape1, 2);
-        Tensor output2D = matrixMultiply(input2D, this->weights);
-        output2D.addBroadcast(this->bias);
-        size_t newShape2[3] = {batchSize, numTokens, this->bias.dim(1)};
-        return output2D.reshape(newShape2, 3);
+        size_t batch = input.dim(0), tokens = input.dim(1), inF = input.dim(2);
+        size_t reshaped[2] = {batch * tokens, inF};
+
+        Tensor flat = input.reshape(reshaped, 2);
+
+        Tensor out = matrixMultiply(flat, this->weights);
+
+        out.addBroadcast(this->bias);
+
+        size_t reshapedBack[3] = {batch, tokens, this->bias.dim(1)};
+        out = out.reshape(reshapedBack, 3);
+        return out;
     }
     if (inputRank == 2)
     {
@@ -43,56 +46,51 @@ __host__ Tensor Dense::forward(const Tensor &input, bool isTraining)
     throw std::runtime_error("Dense::forward solo soporta entradas 2D o 3D.");
 }
 
-__host__ Tensor Dense::backward(const Tensor &outputGradient)
+Tensor Dense::backward(const Tensor &outputGradient)
 {
-    size_t inputRank = this->inputTensor.dims();
-
-    Tensor grad = outputGradient;
+    size_t rank = this->inputTensor.dims();
     Tensor input = this->inputTensor;
+    Tensor dout = outputGradient;
 
-    if (inputRank == 3)
+    if (rank == 3)
     {
-        size_t batchSize = input.dim(0);
-        size_t numTokens = input.dim(1);
-        size_t featuresIn = input.dim(2);
-        size_t featuresOut = grad.dim(2);
+        size_t batch = input.dim(0), tokens = input.dim(1), inF = input.dim(2), outF = outputGradient.dim(2);
+        size_t flatShape[2] = {batch * tokens, inF};
+        size_t gradShape[2] = {batch * tokens, outF};
 
-        if (!grad.isContiguous())
-            grad = grad.contiguous();
         if (!input.isContiguous())
             input = input.contiguous();
+        if (!dout.isContiguous())
+            dout = dout.contiguous();
 
-        size_t reshapedInputShape[2] = {batchSize * numTokens, featuresIn};
-        size_t reshapedGradShape[2] = {batchSize * numTokens, featuresOut};
-
-        input = input.reshape(reshapedInputShape, 2);
-        grad = grad.reshape(reshapedGradShape, 2);
+        input = input.reshape(flatShape, 2);
+        dout = dout.reshape(gradShape, 2);
     }
 
     Tensor inputT = input.transpose(0, 1);
-    this->weightGradients = matrixMultiply(inputT, grad);
-    this->biasGradients = grad.sum(0);
+    this->weightGradients = matrixMultiply(inputT, dout);
+    this->biasGradients = dout.sum(0);
 
     Tensor weightsT = this->weights.transpose(0, 1);
-    Tensor inputGrad = matrixMultiply(grad, weightsT);
+    Tensor dx = matrixMultiply(dout, weightsT);
 
-    if (inputRank == 3)
+    if (rank == 3)
     {
         size_t originalShape[3] = {
             this->inputTensor.dim(0),
             this->inputTensor.dim(1),
             this->inputTensor.dim(2)};
-        return inputGrad.reshape(originalShape, 3);
+        return dx.reshape(originalShape, 3);
     }
-    return inputGrad;
+    return dx;
 }
 
-__host__ std::vector<Tensor *> Dense::getParameters()
+std::vector<Tensor *> Dense::getParameters()
 {
     return {&this->weights, &this->bias};
 }
 
-__host__ std::vector<Tensor *> Dense::getGradients()
+std::vector<Tensor *> Dense::getGradients()
 {
     return {&this->weightGradients, &this->biasGradients};
 }

@@ -3,6 +3,9 @@
 #include "activations/GELU.cuh"
 #include "activations/RELU.cuh"
 #include "optimizers/Adam.cuh"
+#include "layers/PatchEmbedding.cuh"
+#include "layers/Embeddings.cuh"
+#include "layers/FeedForward.cuh"
 #include "losses/CrossEntropy.cuh"
 #include <iostream>
 #include <vector>
@@ -80,8 +83,8 @@ void TestTensor()
     MM2.printContents("MM2 contents");
     MM.printContents("MM contents");
     // --- Test concatenate ---
-    Tensor T1({2, 1, 4});
-    Tensor T2({2, 2, 4});
+    Tensor T1({2, 4, 16});
+    Tensor T2({2, 1, 16});
     T1.fill(1.0f);
     T2.fill(2.0f);
     Tensor ts[] = {T1, T2};
@@ -131,9 +134,9 @@ void TestDense()
     Tensor outputGrad({batchSize, outputSize});
     outputGrad.randomize(); // Gradiente simulado desde la siguiente capa
 
+    outputGrad.printContents("Output gradient contents");
     Tensor inputGrad = dense.backward(outputGrad);
     inputGrad.printDebugInfo("Dense::backward input gradient");
-    outputGrad.printContents("Output gradient contents");
     inputGrad.printContents("Input gradient contents");
 
     // Verifica que el gradiente de entrada tenga shape [batchSize, inputSize]
@@ -333,14 +336,208 @@ void TestCrossEntropyAndSoftmax()
     std::cout << "=== Test CrossEntropy + Softmax completado ===" << std::endl;
 }
 
+void TestPatchEmbedding()
+{
+    std::cout << "=== Test PatchEmbedding Layer ===" << std::endl;
+
+    // Parámetros de prueba
+    size_t batch_size = 2;
+    size_t image_height = 8;
+    size_t image_width = 8;
+    size_t patch_size = 4;
+    size_t in_channels = 3;
+    size_t embedding_dim = 16;
+
+    // Calcular dimensiones del tensor de entrada
+    Tensor input({batch_size, in_channels, image_height, image_width});
+    input.randomize(); // Rellenar con valores aleatorios
+
+    // Crear capa PatchEmbedding
+    PatchEmbedding patchEmbedding(image_height, image_width, patch_size, in_channels, embedding_dim);
+
+    // FORWARD
+    input.printContents("Input contents");
+    Tensor outputptahc = patchEmbedding.forward(input, true);
+    outputptahc.printContents("Output contents");
+    outputptahc.printDebugInfo("PatchEmbedding::forward output");
+
+    // Verificar dimensiones de salida
+    size_t num_patches = (image_height / patch_size) * (image_width / patch_size);
+    assert(outputptahc.dims() == 3);
+    assert(outputptahc.dim(0) == batch_size);
+    assert(outputptahc.dim(1) == num_patches);
+    assert(outputptahc.dim(2) == embedding_dim);
+
+    // BACKWARD
+    Tensor outputGrad({batch_size, num_patches, embedding_dim});
+    outputGrad.randomize(); // Gradiente simulado desde la siguiente capa
+
+    outputGrad.printContents("Output gradient contents");
+    Tensor inputGrad = patchEmbedding.backward(outputGrad);
+    inputGrad.printDebugInfo("PatchEmbedding::backward input gradient");
+    inputGrad.printContents("Input gradient contents");
+
+    // Verificar que el gradiente de entrada tenga la misma shape que el input
+    assert(inputGrad.dims() == 4);
+    assert(inputGrad.dim(0) == batch_size);
+    assert(inputGrad.dim(1) == in_channels);
+    assert(inputGrad.dim(2) == image_height);
+    assert(inputGrad.dim(3) == image_width);
+
+    // Parámetros y gradientes
+    auto params = patchEmbedding.getParameters();
+    auto grads = patchEmbedding.getGradients();
+
+    assert(params.size() == 2);
+    assert(grads.size() == 2);
+
+    params[0]->printDebugInfo("Weights");
+    params[1]->printDebugInfo("Bias");
+    grads[0]->printDebugInfo("Weight Gradients");
+    grads[1]->printDebugInfo("Bias Gradients");
+
+    std::cout << "=== Test PatchEmbedding completado ===" << std::endl;
+}
+
+void TestEmbeddings()
+{
+    std::cout << "=== Test Embeddings Layer ===" << std::endl;
+
+    // --- Parámetros de prueba ---
+    size_t batch_size = 2;
+    size_t image_height = 8;
+    size_t image_width = 8;
+    size_t patch_size = 4;
+    size_t in_channels = 3;
+    size_t embedding_dim = 16;
+
+    // --- Input simulado ---
+    Tensor input({batch_size, in_channels, image_height, image_width});
+    input.randomize();
+
+    // --- Crear Embeddings ---
+    Embeddings embeddings(image_height, image_width, patch_size, in_channels, embedding_dim);
+
+    // --- Forward ---
+    input.printContents("Input Image Tensor");
+    Tensor output = embeddings.forward(input, true);
+    output.printDebugInfo("Embeddings::forward output");
+    output.printContents("Embeddings Output");
+
+    size_t num_patches = (image_height / patch_size) * (image_width / patch_size);
+    assert(output.dims() == 3); // [B, N+1, D]
+    assert(output.dim(0) == batch_size);
+    assert(output.dim(1) == num_patches + 1);
+    assert(output.dim(2) == embedding_dim);
+
+    // --- Backward ---
+    Tensor outGrad({batch_size, num_patches + 1, embedding_dim});
+    outGrad.randomize();
+    outGrad.printContents("Output Gradient (Simulated)");
+
+    Tensor inputGrad = embeddings.backward(outGrad);
+    inputGrad.printDebugInfo("Embeddings::backward output");
+    inputGrad.printContents("Input Gradient");
+
+    // Verifica que el gradiente tenga misma forma que el input
+    assert(inputGrad.dims() == 4);
+    assert(inputGrad.dim(0) == batch_size);
+    assert(inputGrad.dim(1) == in_channels);
+    assert(inputGrad.dim(2) == image_height);
+    assert(inputGrad.dim(3) == image_width);
+
+    // --- Parámetros entrenables ---
+    auto params = embeddings.getParameters();
+    auto grads = embeddings.getGradients();
+
+    // clsToken + positionalEncoding + parámetros del patcher
+    assert(params.size() >= 2);
+    assert(grads.size() >= 2);
+
+    params[0]->printDebugInfo("clsToken Weights");
+    params[1]->printDebugInfo("PositionalEncoding Weights");
+
+    grads[0]->printDebugInfo("clsToken Gradient");
+    grads[1]->printDebugInfo("PositionalEncoding Gradient");
+
+    std::cout << "=== Test Embeddings completado ===" << std::endl;
+}
+
+void TestFeedForward()
+{
+    std::cout << "=== Test FeedForward Layer ===" << std::endl;
+
+    // --- Parámetros de prueba ---
+    size_t batch_size = 2;
+    size_t num_patches = 4;
+    size_t embedding_dim = 16;
+    size_t hidden_dim = 64;
+
+    // --- Input simulado ---
+    Tensor input({batch_size, num_patches, embedding_dim});
+    input.randomize();
+    input.printContents("Input Tensor");
+
+    // --- Crear capa FeedForward ---
+    FeedForward ff(embedding_dim, hidden_dim);
+
+    // --- Forward ---
+    Tensor output = ff.forward(input, true);
+    output.printDebugInfo("FeedForward::forward output");
+    output.printContents("FeedForward Output");
+
+    // Verifica forma de salida: misma que input excepto último dim => D
+    assert(output.dims() == 3);
+    assert(output.dim(0) == batch_size);
+    assert(output.dim(1) == num_patches);
+    assert(output.dim(2) == embedding_dim); // ya que regresa al mismo embedding_dim
+
+    // --- Backward ---
+    Tensor outGrad({batch_size, num_patches, embedding_dim});
+    outGrad.randomize();
+    outGrad.printContents("Output Gradient (Simulated)");
+
+    Tensor inputGrad = ff.backward(outGrad);
+    inputGrad.printDebugInfo("FeedForward::backward output");
+    inputGrad.printContents("Input Gradient");
+
+    // Verifica que el gradiente tenga misma forma que el input
+    assert(inputGrad.dims() == 3);
+    assert(inputGrad.dim(0) == batch_size);
+    assert(inputGrad.dim(1) == num_patches);
+    assert(inputGrad.dim(2) == embedding_dim);
+
+    // --- Parámetros entrenables ---
+    auto params = ff.getParameters();
+    auto grads = ff.getGradients();
+
+    assert(params.size() == 4); // dense1: W,b | dense2: W,b
+    assert(grads.size() == 4);
+
+    params[0]->printDebugInfo("Dense1 Weights");
+    params[1]->printDebugInfo("Dense1 Bias");
+    params[2]->printDebugInfo("Dense2 Weights");
+    params[3]->printDebugInfo("Dense2 Bias");
+
+    grads[0]->printDebugInfo("Dense1 Weight Grad");
+    grads[1]->printDebugInfo("Dense1 Bias Grad");
+    grads[2]->printDebugInfo("Dense2 Weight Grad");
+    grads[3]->printDebugInfo("Dense2 Bias Grad");
+
+    std::cout << "=== Test FeedForward completado ===" << std::endl;
+}
+
 int main()
 {
     cudaDeviceSynchronize();
-    // TestTensor();
-    // TestDense();
-    // TestGELU();
-    // TestReLU();
-    // TestAdam();
+    TestTensor();
+    TestDense();
+    TestGELU();
+    TestReLU();
+    TestAdam();
     TestCrossEntropyAndSoftmax();
+    TestPatchEmbedding();
+    TestEmbeddings();
+    TestFeedForward();
     return 0;
 }

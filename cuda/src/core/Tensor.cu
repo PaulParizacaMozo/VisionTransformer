@@ -358,6 +358,7 @@ Tensor Tensor::reshape(const size_t *newShape_host, size_t newNdim) const
     size_t newTotalSize = 1;
     for (size_t i = 0; i < newNdim; ++i)
         newTotalSize *= newShape_host[i];
+
     if (newTotalSize != totalSize)
         throw std::runtime_error("reshape() requiere mismo número de elementos.");
 
@@ -373,7 +374,8 @@ Tensor Tensor::reshape(const size_t *newShape_host, size_t newNdim) const
     // Crear nuevo tensor como view
     Tensor out(data, newShape_host, newStrides_host, newNdim, dataOffset);
     delete[] newStrides_host;
-    return out;
+    Tensor copy(out); // For debugging purposes
+    return copy;
 }
 
 Tensor Tensor::transpose(size_t dim1, size_t dim2) const
@@ -698,39 +700,42 @@ Tensor matrixMultiply(const Tensor &a, const Tensor &b)
     return result;
 }
 
-// Kernel para concatenar tensores 3D en GPU
+// Kernel para concatenar tensores 3D en GPU// Kernel para concatenar tensores 3D en GPU
 __global__ void concat3DKernel(const float *src, float *dst,
-                               size_t offset, size_t inner, size_t axis_len,
-                               size_t outer, const size_t *dst_strides, size_t axis)
+                               size_t offset, size_t dim0, size_t dim1, size_t dim2,
+                               size_t axis, size_t axisLen)
 {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    size_t total = outer * axis_len * inner;
+    size_t total = dim0 * axisLen * dim2;
+
     if (idx >= total)
         return;
-    size_t o = idx / (axis_len * inner);
-    size_t ai = (idx / inner) % axis_len;
-    size_t i = idx % inner;
-    size_t dst_index = 0;
-    if (axis == 0)
-        dst_index = (offset + ai) * dst_strides[0] + o * dst_strides[1] + i * dst_strides[2];
-    else if (axis == 1)
-        dst_index = o * dst_strides[0] + (offset + ai) * dst_strides[1] + i * dst_strides[2];
-    else
-        dst_index = o * dst_strides[0] + i * dst_strides[1] + (offset + ai) * dst_strides[2];
-    size_t src_index = o * axis_len * inner + ai * inner + i;
-    dst[dst_index] = src[src_index];
-}
-void getLaunchConfig(size_t totalElems, dim3 &grid, dim3 &block)
-{
-    int device;
-    cudaGetDevice(&device);
-    cudaDeviceProp props;
-    cudaGetDeviceProperties(&props, device);
 
-    int maxThreads = props.maxThreadsPerBlock;
-    block = dim3(min(maxThreads, 256));
-    grid = dim3((totalElems + block.x - 1) / block.x);
+    size_t b = idx / (axisLen * dim2);
+    size_t ai = (idx / dim2) % axisLen;
+    size_t d = idx % dim2;
+
+    size_t dst_idx = 0, src_idx = 0;
+
+    if (axis == 0)
+    {
+        dst_idx = (offset + b) * dim1 * dim2 + ai * dim2 + d;
+        src_idx = b * axisLen * dim2 + ai * dim2 + d;
+    }
+    else if (axis == 1)
+    {
+        dst_idx = b * dim1 * dim2 + (offset + ai) * dim2 + d;
+        src_idx = b * axisLen * dim2 + ai * dim2 + d;
+    }
+    else if (axis == 2)
+    {
+        dst_idx = b * dim1 * dim2 + ai * dim2 + (offset + d);
+        src_idx = b * dim1 * axisLen + ai * axisLen + d;
+    }
+
+    dst[dst_idx] = src[src_idx];
 }
+
 Tensor concatenate(const Tensor *tensors, size_t numTensors, size_t axis)
 {
     if (numTensors == 0)
@@ -742,49 +747,46 @@ Tensor concatenate(const Tensor *tensors, size_t numTensors, size_t axis)
     if (ndim != 3)
         throw std::runtime_error("concatenate: solo soporta tensores 3D");
 
-    // Verificar shapes compatibles y calcular la nueva dimensión
-    size_t newDim = 0;
+    // Validación y acumulación del tamaño final en el eje de concatenación
+    size_t totalAxis = 0;
     for (size_t i = 0; i < numTensors; ++i)
     {
         for (size_t d = 0; d < ndim; ++d)
         {
             if (d != axis && tensors[i].dim(d) != tensors[0].dim(d))
-                throw std::runtime_error("concatenate: incompatibilidad en shape");
+                throw std::runtime_error("concatenate: incompatibilidad en dimensiones");
         }
-        newDim += tensors[i].dim(axis);
+        totalAxis += tensors[i].dim(axis);
     }
-    // Crear nueva forma para el tensor resultante
-    size_t newShape[3] = {
+
+    // Dimensiones del resultado
+    size_t shape[3] = {
         tensors[0].dim(0),
         tensors[0].dim(1),
         tensors[0].dim(2)};
-    newShape[axis] = newDim;
+    shape[axis] = totalAxis;
 
-    Tensor result(newShape, 3);
-    float *dst_data = result.getData();
-    size_t *dst_strides = result.getStrides();
+    Tensor result(shape, 3);
+    float *dst = result.getData();
+
+    // Para el kernel, necesitamos pasar las dimensiones del resultado
+    size_t kernelDims[3] = {
+        shape[0], shape[1], shape[2]};
 
     size_t axisOffset = 0;
     for (size_t t = 0; t < numTensors; ++t)
     {
         const Tensor &src = tensors[t];
-
         size_t axisLen = src.dim(axis);
-        size_t outer = 1, inner = 1;
-        for (size_t d = 0; d < axis; ++d)
-            outer *= src.dim(d);
-        for (size_t d = axis + 1; d < ndim; ++d)
-            inner *= src.dim(d);
-
-        size_t totalElems = outer * axisLen * inner;
-
-        dim3 grid, block;
-        getLaunchConfig(totalElems, grid, block);
-
-        concat3DKernel<<<grid, block>>>(
-            src.getData(), dst_data,
-            axisOffset, inner, axisLen, outer,
-            dst_strides, axis);
+        size_t totalElems = src.dim(0) * axisLen * src.dim(2);
+        constexpr int threadsPerBlock = 256;
+        int blocks = (totalElems + threadsPerBlock - 1) / threadsPerBlock;
+        cudaGetLastError();
+        concat3DKernel<<<blocks, threadsPerBlock>>>(
+            src.getData(), dst,
+            axisOffset,
+            kernelDims[0], kernelDims[1], kernelDims[2],
+            axis, axisLen);
 
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess)
@@ -793,10 +795,10 @@ Tensor concatenate(const Tensor *tensors, size_t numTensors, size_t axis)
             throw std::runtime_error("Error tras lanzar kernel");
         }
 
-        cudaDeviceSynchronize(); // detectar errores de ejecución
-
+        cudaDeviceSynchronize();
         axisOffset += axisLen;
     }
+
     return result;
 }
 

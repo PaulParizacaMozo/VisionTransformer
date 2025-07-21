@@ -56,6 +56,9 @@ set(SOURCES
     main.cu
     src/core/Tensor.cu
     src/layers/Dense.cu
+    src/layers/PatchEmbedding.cu
+    src/layers/Embeddings.cu
+    src/layers/FeedForward.cu
     src/activations/GELU.cu
     src/activations/RELU.cu
     src/optimizers/Adam.cu

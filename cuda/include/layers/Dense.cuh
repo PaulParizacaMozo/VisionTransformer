@@ -18,20 +18,20 @@ private:
 
 public:
     // Constructor
-    __host__ Dense(size_t inputSize, size_t outputSize);
+    Dense(size_t inputSize, size_t outputSize);
 
     // Forward en GPU
-    __host__ Tensor forward(const Tensor &input, bool isTraining) override;
+    Tensor forward(const Tensor &input, bool isTraining) override;
 
     // Backward en GPU
-    __host__ Tensor backward(const Tensor &outputGradient) override;
+    Tensor backward(const Tensor &outputGradient) override;
 
     // Acceso a parámetros entrenables
-    __host__ std::vector<Tensor *> getParameters() override;
+    std::vector<Tensor *> getParameters() override;
 
     // Acceso a gradientes
-    __host__ std::vector<Tensor *> getGradients() override;
+    std::vector<Tensor *> getGradients() override;
 
     // Nombre de la capa
-    __host__ std::string getName() const override { return "Dense"; }
+    std::string getName() const override { return "Dense"; }
 };
