@@ -6,6 +6,7 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <cstring>     // std::memcpy
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -250,6 +251,63 @@ Tensor Tensor::contiguous() const {
   }
 
   return new_tensor;
+}
+
+Tensor Tensor::expand(const std::vector<size_t>& newShape) const
+{
+    if (newShape.size() != shape.size())
+        throw std::invalid_argument("expand: la dimensionalidad no coincide.");
+
+    std::vector<size_t> newStrides = strides;
+
+    for (size_t d = 0; d < shape.size(); ++d) {
+        if (newShape[d] == shape[d]) continue;              // sin cambio
+        if (shape[d] != 1)
+            throw std::invalid_argument(
+                "expand: solo se puede expandir dimensiones de tamaño 1.");
+        newStrides[d] = 0;  // truco clásico de broadcasting: stride 0
+    }
+
+    return Tensor(dataPtr, newShape, newStrides, dataOffset);
+}
+
+// -----------------------------------------------------------------------------
+// 2. Tensor::copyFrom ‑– copia datos de otro tensor del mismo shape
+// -----------------------------------------------------------------------------
+void Tensor::copyFrom(const Tensor& src)
+{
+    std::cout << "shape: " << this->shapeToString() << " - src.shape: "<<src.shapeToString()<<std::endl;
+    if (shape != src.shape)
+        throw std::invalid_argument("copyFrom: las shapes no coinciden.");
+
+    // Ruta rápida: ambos contiguos → memcpy
+    if (isContiguous() && src.isContiguous()) {
+        std::memcpy(getData() + dataOffset,
+                    src.getData() + src.dataOffset,
+                    totalSize * sizeof(float));
+        return;
+    }
+
+    // Ruta genérica: iteración plana respetando strides
+    std::vector<size_t> idx(shape.size(), 0);
+
+    for (size_t lin = 0; lin < totalSize; ++lin) {
+        size_t dstOff = dataOffset;
+        size_t srcOff = src.dataOffset;
+
+        for (size_t d = 0; d < shape.size(); ++d) {
+            dstOff += idx[d] * strides[d];
+            srcOff += idx[d] * src.strides[d];
+        }
+
+        (*dataPtr)[dstOff] = (*src.dataPtr)[srcOff];
+
+        // ++idx (estilo odómetro)
+        for (int d = (int)shape.size() - 1; d >= 0; --d) {
+            if (++idx[d] < shape[d]) break;
+            idx[d] = 0;
+        }
+    }
 }
 
 // --- Operaciones Aritméticas ---

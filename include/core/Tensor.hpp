@@ -51,6 +51,9 @@ public:
   void addBroadcast(const Tensor &other);
   Tensor contiguous() const; // AÑADIDO
 
+  Tensor expand(const std::vector<size_t>& newShape) const;
+  void copyFrom(const Tensor& src);
+
   // --- Operadores Aritméticos ---
   Tensor operator+(const Tensor &other) const;
 
