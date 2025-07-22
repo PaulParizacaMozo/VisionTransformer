@@ -1,4 +1,5 @@
 #include "model/Trainer.hpp"
+#include "utils/DataAugmentation.hpp"
 #include <algorithm> // Para std::random_shuffle
 #include <ctime>     // Para std::time
 #include <iomanip>
@@ -24,6 +25,36 @@ static float cosine_warmup_lr(long long step,
                    / std::max(1LL, total_steps - warmup_steps);
     return lr_max * 0.5f * (1.0f + std::cos(M_PI * progress));
 }
+
+static float onecycle_lr(long long step,
+                         long long total_steps,
+                         float lr_max      = 3e-4f,
+                         float pct_up      = 0.3f,   // 30 % warm‑up
+                         float div_factor  = 25.0f)  // lr_min = lr_max/div_factor
+{
+    long long warmup_steps = (long long)(pct_up * total_steps);
+    float lr_min = lr_max / div_factor;
+    float lr_final = lr_min / div_factor;         // annihilation target
+
+    if (step < warmup_steps) {
+        // lineal: lr_min  →  lr_max
+        float progress = (float)step / warmup_steps;
+        return lr_min + progress * (lr_max - lr_min);
+    }
+
+    long long down_steps = total_steps - warmup_steps;
+    long long step_down = step - warmup_steps;
+    float progress = (float)step_down / down_steps;
+
+    if (progress < 0.8f) {  // 80 %: fase de descenso suave
+        float pct = progress / 0.8f;               // 0‑1
+        return lr_max - pct * (lr_max - lr_min);
+    } else {                // 20 % final: annihilation
+        float pct = (progress - 0.8f) / 0.2f;      // 0‑1
+        return lr_min - pct * (lr_min - lr_final);
+    }
+}
+
 
 /**
  * @brief Calcula la precisión de las predicciones de un batch.
@@ -106,12 +137,13 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
   float total_loss = 0.0f;
   float total_accuracy = 0.0f;
 
+  // Crear el objeto de DataAugmentation
+  // DataAugmentation augmentor(0.5f, 4, 30.0f, 4.0f); // Flip con probabilidad 0.5 y recorte con padding 4
+
+
   // Crear y barajar los índices al inicio de la época
   std::vector<size_t> indices(num_train_samples);
   std::iota(indices.begin(), indices.end(), 0);
-  // Usar la época en la semilla asegura un barajado diferente cada vez
-  // std::srand(static_cast<unsigned int>(std::time(nullptr) + config.epochs));
-  // std::random_shuffle(indices.begin(), indices.end());
   std::mt19937 rng(static_cast<uint32_t>(epoch));   // semilla = epoch
   std::shuffle(indices.begin(), indices.end(), rng);
 
@@ -131,6 +163,12 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
       Tensor x_sample = X_train.slice(0, data_idx, 1);
       Tensor y_sample = y_train.slice(0, data_idx, 1);
 
+      // x_sample = random_flip(x_sample);                // Flip Horizontal
+      // x_sample = random_crop(x_sample, 24, 4);         // Recorte 24x24 con padding 4
+      x_sample = random_rotation(x_sample, 30.0f);        // Rotación aleatoria 30°
+      x_sample = random_translation(x_sample, 4);         // Traslación aleatoria
+      // x_sample = random_zoom(x_sample, 0.8f, 1.2f);       // Zoom aleatorio
+
       for (size_t c = 0; c < 28; ++c) {
         for (size_t r = 0; r < 28; ++r) {
           X_batch(j, 0, c, r) = x_sample(0, 0, c, r);
@@ -140,6 +178,9 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
         y_batch(j, c) = y_sample(0, c);
       }
     }
+
+    // --- Aplicar Data Augmentation
+    // augmentor.apply(X_batch);
 
     // --- Ciclo de entrenamiento para el batch ---
     Tensor logits = model.forward(X_batch, true);
@@ -158,6 +199,11 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
                                     warmup_steps,
                                     total_steps,
                                     config.lr_init);
+    // float lr_now = onecycle_lr(global_step,
+    //                        total_steps,
+    //                        config.lr_init,     // lr_max
+    //                        0.3f,               // pct_up
+    //                        25.0f);             // div_factor
     optimizer.setLearningRate(lr_now);
     // --------------------------------------------
 
