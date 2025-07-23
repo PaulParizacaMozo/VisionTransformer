@@ -60,11 +60,23 @@ run_app() {
   echo "--- Ejecución finalizada ---"
 }
 
+run_test() {
+  echo "--- Ejecutando pruebas sobre el conjunto de test ---"
+  ./${BUILD_DIR}/test  # Ejecutamos el test de predicción
+  echo "--- Pruebas finalizadas ---"
+}
+
 # --- Flujo Principal ---
 echo "Iniciando flujo: Compilar y Ejecutar"
 echo "Proyecto: ${PROJECT_NAME}, Tipo de Compilación: ${BUILD_TYPE}"
 
-build_project
-run_app
+# Comprobar si se debe ejecutar un test
+if [ "$1" == "test" ]; then
+  build_project
+  run_test
+else
+  build_project
+  run_app
+fi
 
 exit 0
