@@ -16,7 +16,7 @@ int main() {
     model_config.mlp_hidden_dim = model_config.embedding_dim * 16;
 
     TrainerConfig train_config;
-    train_config.epochs = 50;
+    train_config.epochs = 10;
     train_config.batch_size = 64;// 128
     train_config.learning_rate = 3e-4f;
     train_config.weight_decay = 1e-4f; // 0.01f
