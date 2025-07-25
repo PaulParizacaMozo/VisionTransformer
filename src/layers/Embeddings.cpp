@@ -1,5 +1,6 @@
 #include "layers/Embeddings.hpp"
 #include "core/Tensor.hpp" // Para expand, concatenate
+#include <iostream>
 
 Embeddings::Embeddings(size_t image_height, size_t image_width, size_t patch_size, size_t in_channels, size_t embedding_dim)
     : embedding_dim(embedding_dim) {
@@ -28,8 +29,11 @@ Tensor Embeddings::forward(const Tensor &input, bool isTraining) {
 
   // 2. Expandir el token CLS para que coincida con el tamaño del batch
   // expand() crea una vista {B, 1, D} sin copiar memoria.
-  Tensor cls_token_batch({batchSize, 1, this->embedding_dim});
+  // Tensor cls_token_batch({batchSize, 1, this->embedding_dim});
 
+  // 2. Expandir el token CLS para que coincida con el tamaño del batch
+  Tensor cls_token_batch = clsToken.expand({batchSize, 1, embedding_dim});
+  
   // 3. Concatenar el CLS token y los parches a lo largo del eje de la secuencia (axis=1)
   Tensor embeddings_with_cls = concatenate({cls_token_batch, patch_embeddings}, 1); // -> {B, N+1, D}
 
@@ -50,6 +54,8 @@ Tensor Embeddings::backward(const Tensor &outputGradient) {
 
   this->clsTokenGradient = grad_cls.sum(0);
 
+  // std::cout << this->clsTokenGradient.shapeToString() << std::endl;
+  // clsTokenGradient.printDebugInfo("clsTokenGradient");
   // --- LA SOLUCIÓN DIRECTA ---
   // En lugar de llamar a .contiguous(), creamos un nuevo tensor y copiamos los datos.
   // Esto garantiza que el tensor que pasamos es 100% contiguo.

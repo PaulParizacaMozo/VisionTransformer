@@ -1,4 +1,6 @@
 #include "model/Trainer.hpp"
+#include "utils/DataAugmentation.hpp"
+#include "optimizers/Scheduler.hpp" // Para cosine_warmup_lr
 #include <algorithm> // Para std::random_shuffle
 #include <ctime>     // Para std::time
 #include <iomanip>
@@ -6,6 +8,8 @@
 #include <limits>  // Para std::numeric_limits
 #include <numeric> // Para std::iota
 #include <stdexcept>
+#include <random>  
+#include <cmath> 
 
 // --- Función Auxiliar (privada a este archivo usando un namespace anónimo) ---
 namespace {
@@ -56,11 +60,16 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
   const auto &[X_train, y_train] = train_data;
   const auto &[X_test, y_test] = test_data;
 
+  size_t batches_per_epoch =
+        (train_data.first.getShape()[0] + config.batch_size - 1) / config.batch_size;
+    total_steps = (long long)batches_per_epoch * config.epochs;
+
   for (int epoch = 0; epoch < config.epochs; ++epoch) {
     // std::cout << "\n--- Época " << epoch + 1 << "/" << config.epochs << " --- | ";
 
     // Ejecutar una época de entrenamiento y obtener sus métricas
-    auto [train_loss, train_acc] = train_epoch(X_train, y_train);
+    // auto [train_loss, train_acc] = train_epoch(X_train, y_train);
+    auto [train_loss, train_acc] = train_epoch(X_train, y_train, epoch);
 
     // Limpiar la línea de progreso de los batches
     std::cout << "\r" << std::string(80, ' ') << "\r";
@@ -78,19 +87,22 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
 /**
  * @brief Ejecuta un ciclo completo sobre el dataset de entrenamiento (una época).
  */
-std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor &y_train) {
+std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor &y_train, int epoch) {
   size_t num_train_samples = X_train.getShape()[0];
   size_t num_batches = (num_train_samples + config.batch_size - 1) / config.batch_size;
 
   float total_loss = 0.0f;
   float total_accuracy = 0.0f;
 
+  // Crear el objeto de DataAugmentation
+  // DataAugmentation augmentor(0.5f, 4, 30.0f, 4.0f); // Flip con probabilidad 0.5 y recorte con padding 4
+
+
   // Crear y barajar los índices al inicio de la época
   std::vector<size_t> indices(num_train_samples);
   std::iota(indices.begin(), indices.end(), 0);
-  // Usar la época en la semilla asegura un barajado diferente cada vez
-  std::srand(static_cast<unsigned int>(std::time(nullptr) + config.epochs));
-  std::random_shuffle(indices.begin(), indices.end());
+  std::mt19937 rng(static_cast<uint32_t>(epoch));   // semilla = epoch
+  std::shuffle(indices.begin(), indices.end(), rng);
 
   for (size_t i = 0; i < num_batches; ++i) {
     size_t start_idx_in_indices = i * config.batch_size;
@@ -108,6 +120,12 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
       Tensor x_sample = X_train.slice(0, data_idx, 1);
       Tensor y_sample = y_train.slice(0, data_idx, 1);
 
+      // x_sample = random_flip(x_sample);                // Flip Horizontal
+      // x_sample = random_crop(x_sample, 24, 4);         // Recorte 24x24 con padding 4
+      // x_sample = random_rotation(x_sample, 30.0f);        // Rotación aleatoria 30°
+      // x_sample = random_translation(x_sample, 4);         // Traslación aleatoria
+      // x_sample = random_zoom(x_sample, 0.8f, 1.2f);       // Zoom aleatorio
+
       for (size_t c = 0; c < 28; ++c) {
         for (size_t r = 0; r < 28; ++r) {
           X_batch(j, 0, c, r) = x_sample(0, 0, c, r);
@@ -117,6 +135,9 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
         y_batch(j, c) = y_sample(0, c);
       }
     }
+
+    // --- Aplicar Data Augmentation
+    // augmentor.apply(X_batch);
 
     // --- Ciclo de entrenamiento para el batch ---
     Tensor logits = model.forward(X_batch, true);
@@ -128,9 +149,22 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
 
     auto params = model.getParameters();
     auto grads = model.getGradients();
-    optimizer.update(params, grads);
 
-    std::cout << "\rEntrenando... Batch " << i + 1 << "/" << num_batches << " " << std::flush;
+    // ─── Scheduler ───────────────────────────────
+    long long warmup_steps = (long long)(config.warmup_frac * total_steps);
+    float lr_now = cosine_warmup_lr(global_step,
+                                    warmup_steps,
+                                    total_steps,
+                                    config.lr_init);
+    optimizer.setLearningRate(lr_now);
+    // --------------------------------------------
+
+    optimizer.update(params, grads);
+    global_step++;
+
+    std::cout << "\rEntrenando... Batch " << i + 1
+              << "/" << num_batches
+              << " | LR: " << lr_now << std::flush;
   }
 
   return {total_loss / num_batches, total_accuracy / num_batches};

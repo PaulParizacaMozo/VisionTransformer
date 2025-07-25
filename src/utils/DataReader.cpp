@@ -27,8 +27,15 @@ Tensor oneHotEncode(const std::vector<int> &labels, int num_classes) {
 
 // --- Implementación de la Función Principal ---
 
-std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath, float sample_fraction) {
-  std::cout << "Cargando datos desde: " << filePath << " (fracción a cargar: " << sample_fraction * 100 << "%)" << std::endl;
+// --- Implementación de la Función Principal ---
+std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
+                                        float sample_fraction,
+                                        float mean,         // <- NUEVO
+                                        float stddev) {     // <- NUEVO
+    std::cout << "--- Cargando " << filePath
+              << "  (fracción: " << sample_fraction * 100 << "%, "
+              << "μ=" << mean << ", σ=" << stddev << ")"
+              << std::endl;
 
   std::ifstream file(filePath);
   if (!file.is_open()) {
@@ -55,7 +62,10 @@ std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath, float sampl
     pixels.reserve(784);
     while (std::getline(ss, value_str, ',')) {
       // Normalizar el valor del píxel a [0, 1]
-      pixels.push_back(std::stof(value_str) / 255.0f);
+      float v = std::stof(value_str) / 255.0f;        // [0,1]
+      v = (v - mean) / stddev;                        // normalización Z
+      pixels.push_back(v);
+      // pixels.push_back(std::stof(value_str) / 255.0f);
     }
     if (pixels.size() != 784) {
       std::cerr << "Advertencia: Se encontró una fila con un número de píxeles incorrecto. Se ignora." << std::endl;
@@ -106,4 +116,37 @@ std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath, float sampl
   std::cout << "  -> Forma de y (etiquetas): " << y.shapeToString() << std::endl;
 
   return {std::move(X), std::move(y)};
+}
+
+std::pair<XYPair, XYPair>
+load_csv_data_train_val(const std::string& filePath,
+                        float sample_frac,
+                        float train_frac,
+                        float val_frac,
+                        float mean,
+                        float stddev)
+{
+    if (train_frac + val_frac > 1.0f + 1e-6f)
+        throw std::invalid_argument("train_frac + val_frac no debe superar 1.0");
+
+    // 1. Cargar SOLO la fracción total solicitada (p.ej. 25 %)
+    XYPair all_data = load_csv_data(filePath, sample_frac, mean, stddev);
+    Tensor& X_all = all_data.first;
+    Tensor& y_all = all_data.second;
+
+    const size_t N = X_all.getShape()[0];
+    const size_t N_train = static_cast<size_t>(N * train_frac);
+    const size_t N_val   = static_cast<size_t>(N * val_frac);
+
+    if (N_train + N_val > N)
+        throw std::runtime_error("No hay suficientes muestras para el split solicitado.");
+
+    // 2. Split mediante vistas (slice) — sin copiar memoria
+    Tensor X_train = X_all.slice(0, 0, N_train);
+    Tensor y_train = y_all.slice(0, 0, N_train);
+
+    Tensor X_val   = X_all.slice(0, N_train, N_val);
+    Tensor y_val   = y_all.slice(0, N_train, N_val);
+
+    return { {X_train, y_train}, {X_val, y_val} };
 }
