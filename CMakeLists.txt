@@ -24,20 +24,20 @@ message(STATUS "Compiler flags: ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUI
 # --- Búsqueda de Dependencias ---
 find_package(OpenMP REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(OpenGL REQUIRED)
-find_package(glfw3 3.3 REQUIRED)
-find_package(GLEW REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
 
 # --- Directorios de include ---
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
     ${OpenCV_INCLUDE_DIRS}
+    ${GTK3_INCLUDE_DIRS}
 )
 
 # --- Fuentes del núcleo (modelo, utils, layers, etc) ---
 file(GLOB_RECURSE CORE_SOURCES
-    src/*.cpp
-    include/utils/*.hpp
+    "src/*.cpp"
+    "include/utils/*.hpp"
 )
 
 # --- Crear biblioteca estática del core ---
@@ -50,23 +50,30 @@ target_link_libraries(core
 )
 
 # --- Ejecutables ---
-# VisionTransformer (sin visualizador)
 add_executable(${PROJECT_NAME} app/main.cpp)
-# Test de consola
-add_executable(test        app/test.cpp)
-add_executable(testImage   app/testImage.cpp)
-# Visualizador gráfico
-add_executable(visualizer  app/visualizer.cpp src/Visualizer.cpp)
+add_executable(test app/test.cpp)
+add_executable(testImage app/testImage.cpp)
+add_executable(miniplataforma app/miniplataforma.cpp)
 
 # --- Ligar ejecutables con core y dependencias externas ---
-foreach(target ${PROJECT_NAME} test testImage visualizer)
+foreach(target ${PROJECT_NAME} test testImage)
   target_link_libraries(${target}
     PRIVATE
       core
-      ${OPENGL_gl_LIBRARY}
-      glfw
-      GLEW::GLEW
+      ${OpenCV_LIBS}
   )
 endforeach()
+
+# Para miniplataforma necesitamos GTK
+target_link_libraries(miniplataforma
+    PRIVATE
+      core
+      ${OpenCV_LIBS}
+      ${GTK3_LIBRARIES}
+)
+
+# Flags específicos para GTK
+target_compile_options(miniplataforma PRIVATE ${GTK3_CFLAGS})
+target_link_options(miniplataforma PRIVATE ${GTK3_LDFLAGS})
 
 message(STATUS "Configuración de CMake para ${PROJECT_NAME} completada.")
