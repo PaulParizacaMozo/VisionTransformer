@@ -1,77 +1,133 @@
 #include "model/Trainer.hpp"
 #include "utils/DataReader.hpp"
 #include "utils/ModelUtils.hpp"
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 int main() {
-    try {
-        // --- 1. Crear Modelo ---
-        ViTConfig model_config;
-        model_config.embedding_dim = 196;
-        model_config.num_layers = 2;
-        model_config.num_heads = 4;
-        model_config.patch_size = 7;
-        model_config.mlp_hidden_dim = model_config.embedding_dim * 4;
+  try {
+    // --- 1. Crear Modelo ---
+    ViTConfig model_config;
+    model_config.embedding_dim = 196;
+    model_config.num_layers = 2;
+    model_config.num_heads = 4;
+    model_config.patch_size = 7;
+    model_config.mlp_hidden_dim = model_config.embedding_dim * 4;
 
-        VisionTransformer model(model_config);
+    VisionTransformer model(model_config);
 
-        // Cargar datos de prueba
-        auto test_data = load_csv_data("data/mnist_test.csv", 1.00f, 0.1307f, 0.3081f);
+    // Cargar datos de prueba
+    auto test_data =
+        load_csv_data("data/mnist_test.csv", 1.00f, 0.1307f, 0.3081f);
 
-        // --- 2. Cargar pesos del Modelo ---
-        const std::string weights_path = "vit_fashion_mnist.weights.30.ep";
-        std::cout << "\nCargando pesos del modelo en: " << weights_path << std::endl;
-        ModelUtils::load_weights(model, weights_path);
-        std::cout << "\nPesos cargados correctamente.\n";
+    // --- 2. Cargar pesos del Modelo ---
+    const std::string weights_path = "vit_fashion_mnist.weights.30.ep";
+    std::cout << "\nCargando pesos del modelo en: " << weights_path
+              << std::endl;
+    ModelUtils::load_weights(model, weights_path);
+    std::cout << "\nPesos cargados correctamente.\n";
 
-        // --- 3. Hacer predicciones ---
-        const Tensor& X_test = test_data.first;
-        const Tensor& y_test = test_data.second;
+    // --- 3. Hacer predicciones ---
+    const Tensor &X_test = test_data.first;
+    const Tensor &y_test = test_data.second;
 
-        Tensor logits = model.forward(X_test, false); // `isTraining` es `false` durante la inferencia
-        Tensor probabilities = softmax(logits);
+    Tensor logits = model.forward(
+        X_test, false); // `isTraining` es `false` durante la inferencia
+    Tensor probabilities = softmax(logits);
 
-        // Calcular accuracy
-        size_t batch_size = probabilities.getShape()[0];
-        int correct_predictions = 0;
-        int total_samples = 0;
+    size_t batch_size = probabilities.getShape()[0];
+    size_t num_classes = probabilities.getShape()[1];
+    int correct_predictions = 0;
+    int total_samples = 0;
 
-        for (size_t i = 0; i < batch_size; ++i) {
-            float max_prob = -std::numeric_limits<float>::infinity();
-            int predicted_class = -1;
+    // Matriz de confusión: confusion[true][predicted]
+    std::vector<std::vector<int>> confusion(num_classes,
+                                            std::vector<int>(num_classes, 0));
 
-            for (size_t j = 0; j < probabilities.getShape()[1]; ++j) {
-                if (probabilities(i, j) > max_prob) {
-                    max_prob = probabilities(i, j);
-                    predicted_class = j;
-                }
-            }
+    for (size_t i = 0; i < batch_size; ++i) {
+      float max_prob = -std::numeric_limits<float>::infinity();
+      int predicted_class = -1;
 
-            int true_label = -1;
-            for (size_t j = 0; j < y_test.getShape()[1]; ++j) {
-                if (y_test(i, j) == 1.0f) {
-                    true_label = j;
-                    break;
-                }
-            }
-
-            std::cout << "Sample " << i << " | Predicción: " << predicted_class 
-                      << " | Etiqueta: " << true_label << std::endl;
-
-            if (predicted_class == true_label) {
-                ++correct_predictions;
-            }
-            ++total_samples;
+      for (size_t j = 0; j < num_classes; ++j) {
+        if (probabilities(i, j) > max_prob) {
+          max_prob = probabilities(i, j);
+          predicted_class = j;
         }
+      }
 
-        float accuracy = static_cast<float>(correct_predictions) / total_samples;
-        std::cout << "\nAccuracy del modelo: " << accuracy * 100.0f << "%" << std::endl;
+      int true_label = -1;
+      for (size_t j = 0; j < num_classes; ++j) {
+        if (y_test(i, j) == 1.0f) {
+          true_label = j;
+          break;
+        }
+      }
 
-    } catch (const std::exception &e) {
-        std::cerr << "\nERROR CRÍTICO: " << e.what() << std::endl;
-        return 1;
+      // std::cout << "Sample " << i << " | Predicción: " << predicted_class
+      //           << " | Etiqueta: " << true_label << std::endl;
+
+      if (predicted_class == true_label) {
+        ++correct_predictions;
+      }
+
+      confusion[true_label][predicted_class]++;
+      ++total_samples;
     }
 
-    return 0;
+    // --- 4. Mostrar métricas ---
+    float accuracy = static_cast<float>(correct_predictions) / total_samples;
+    std::cout << "\nAccuracy del modelo: " << accuracy * 100.0f << "%"
+              << std::endl;
+
+    // Parámetros de formato
+    const int w_class = 8;
+    const int w_val = 15;
+
+    auto print_separator = [&]() {
+      std::cout << "+" << std::string(w_class, '-') << "+"
+                << std::string(w_val, '-') << "+" << std::string(w_val, '-')
+                << "+" << std::string(w_val, '-') << "+"
+                << "\n";
+    };
+
+    std::cout << "\n=== Métricas por clase ===\n";
+    print_separator();
+    std::cout << "|" << std::setw(w_class) << std::left << "Clase" << "|"
+              << std::setw(w_val) << "Precision" << "|" << std::setw(w_val)
+              << "Recall" << "|" << std::setw(w_val) << "F1-score" << "|\n";
+    print_separator();
+
+    for (size_t c = 0; c < num_classes; ++c) {
+      int TP = confusion[c][c];
+      int FP = 0, FN = 0;
+      for (size_t i = 0; i < num_classes; ++i) {
+        if (i != c) {
+          FP += confusion[i][c];
+          FN += confusion[c][i];
+        }
+      }
+
+      float precision =
+          (TP + FP) > 0 ? static_cast<float>(TP) / (TP + FP) : 0.0f;
+      float recall = (TP + FN) > 0 ? static_cast<float>(TP) / (TP + FN) : 0.0f;
+      float f1 = (precision + recall) > 0
+                     ? 2 * precision * recall / (precision + recall)
+                     : 0.0f;
+
+      std::cout << "|" << std::setw(w_class) << std::left << c << "|"
+                << std::setw(w_val) << precision << "|" << std::setw(w_val)
+                << recall << "|" << std::setw(w_val) << f1 << "|\n";
+    }
+    print_separator();
+
+    // std::cout << "--- Pruebas finalizadas ---\n";
+
+  } catch (const std::exception &e) {
+    std::cerr << "\nERROR CRÍTICO: " << e.what() << std::endl;
+    return 1;
+  }
+
+  return 0;
 }
