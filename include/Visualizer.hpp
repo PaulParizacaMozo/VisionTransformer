@@ -1,6 +1,8 @@
+// include/Visualizer.hpp
 #ifndef VISUALIZADOR_H
 #define VISUALIZADOR_H
 
+#include <algorithm>               // std::min
 #include <opencv2/opencv.hpp>
 #include "core/Tensor.hpp"
 #include "model/VisionTransformer.hpp"
@@ -10,20 +12,18 @@
 
 class Visualizador {
 public:
-    Visualizador(int ancho = 640, int alto = 480, const ViTConfig &cfg = ViTConfig());
+    Visualizador(int ancho = 640,
+                 int alto  = 480,
+                 const ViTConfig &cfg = ViTConfig());
     ~Visualizador();
 
     bool inicializar();
     void ejecutar();
-    Tensor capturarImagen();
-    Tensor predecir(const Tensor &entrada);
 
-    VisionTransformer modelo;
+    /// Carga pesos en el modelo
     void cargarPesos(const std::string &ruta) {
         ModelUtils::load_weights(modelo, ruta);
     }
-
-    Tensor procesarImagen(cv::Mat& img);
 
 private:
     GLFWwindow* ventana;
@@ -32,9 +32,13 @@ private:
     cv::VideoCapture camara;
     GLuint textura_id;
 
-    std::string ultima_prediccion;
+    VisionTransformer modelo;
+    std::string      ultima_prediccion;
 
     void cargarTextura(const cv::Mat &imagen);
+    Tensor capturarImagen();
+    Tensor predecir(const Tensor &entrada);
+
     static void callbackTeclado(GLFWwindow* ventana,
                                 int tecla,
                                 int scancode,
