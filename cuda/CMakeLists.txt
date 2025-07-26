@@ -48,6 +48,7 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/include/optimizers
     ${PROJECT_SOURCE_DIR}/include/losses
     ${PROJECT_SOURCE_DIR}/include/model
+    ${PROJECT_SOURCE_DIR}/include/utils
 )
 
 # ------------------------------
@@ -67,6 +68,9 @@ set(SOURCES
     src/optimizers/Adam.cu
     src/losses/CrossEntropy.cu
     src/model/TransformerEncoderBlock.cu
+    src/model/VisionTransformer.cu
+    src/model/Trainer.cu
+    src/utils/DataReader.cu
 )
 
 # ------------------------------

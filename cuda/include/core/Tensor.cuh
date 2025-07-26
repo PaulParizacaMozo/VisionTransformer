@@ -136,6 +136,133 @@ public:
         recursivePrint(0, 0);
         std::cout << "\n\n";
     }
+    void printImageAtIndex(const std::string &name, size_t index) const
+    {
+        std::vector<size_t> host_shape(ndim);
+        cudaMemcpy(host_shape.data(), shape, ndim * sizeof(size_t), cudaMemcpyDeviceToHost);
+
+        size_t batch_dim = host_shape[0];
+        if (index >= batch_dim)
+        {
+            std::cerr << "Índice fuera de rango: " << index << " >= " << batch_dim << "\n";
+            return;
+        }
+
+        // Calcular el tamaño de una muestra (por ejemplo, una imagen)
+        size_t sample_size = 1;
+        for (size_t i = 1; i < ndim; ++i)
+            sample_size *= host_shape[i];
+
+        std::vector<float> host_data(sample_size);
+        cudaMemcpy(host_data.data(), data + index * sample_size, sample_size * sizeof(float), cudaMemcpyDeviceToHost);
+
+        std::cout << "--- " << name << "[" << index << "] (shape: [";
+        for (size_t i = 1; i < ndim; ++i)
+        {
+            std::cout << host_shape[i];
+            if (i < ndim - 1)
+                std::cout << ", ";
+        }
+        std::cout << "]) ---\n";
+
+        // Imprimir la imagen (solo soportamos imágenes 2D o 3D por simplicidad)
+        if (ndim == 4) // [N, C, H, W]
+        {
+            size_t C = host_shape[1];
+            size_t H = host_shape[2];
+            size_t W = host_shape[3];
+            for (size_t c = 0; c < C; ++c)
+            {
+                std::cout << "Canal " << c << ":\n";
+                for (size_t i = 0; i < H; ++i)
+                {
+                    std::cout << "[";
+                    for (size_t j = 0; j < W; ++j)
+                    {
+                        std::cout << (host_data[c * H * W + i * W + j] > 0.5f ? '#' : '.');
+                        if (j < W - 1)
+                            std::cout << ", ";
+                    }
+                    std::cout << "]\n";
+                }
+                std::cout << "\n";
+            }
+        }
+        else if (ndim == 3) // [N, H, W]
+        {
+            size_t H = host_shape[1];
+            size_t W = host_shape[2];
+            for (size_t i = 0; i < H; ++i)
+            {
+                std::cout << "[";
+                for (size_t j = 0; j < W; ++j)
+                {
+                    std::cout << host_data[i * W + j];
+                    if (j < W - 1)
+                        std::cout << ", ";
+                }
+                std::cout << "]\n";
+            }
+        }
+        else
+        {
+            std::cerr << "printImageAtIndex solo soporta tensores 3D o 4D (batch).\n";
+        }
+
+        std::cout << "\n";
+    }
+    void printLabelAtIndex(const std::string &name, size_t index) const
+    {
+        std::vector<size_t> host_shape(ndim);
+        cudaMemcpy(host_shape.data(), shape, ndim * sizeof(size_t), cudaMemcpyDeviceToHost);
+
+        size_t batch_dim = host_shape[0];
+        if (index >= batch_dim)
+        {
+            std::cerr << "Índice fuera de rango: " << index << " >= " << batch_dim << "\n";
+            return;
+        }
+
+        // Calcular tamaño de una muestra (una etiqueta puede ser escalar o vector)
+        size_t label_size = 1;
+        for (size_t i = 1; i < ndim; ++i)
+            label_size *= host_shape[i];
+
+        std::vector<float> host_data(label_size);
+        cudaMemcpy(host_data.data(), data + index * label_size, label_size * sizeof(float), cudaMemcpyDeviceToHost);
+
+        std::cout << "--- " << name << "[" << index << "] (shape: [";
+        for (size_t i = 1; i < ndim; ++i)
+        {
+            std::cout << host_shape[i];
+            if (i < ndim - 1)
+                std::cout << ", ";
+        }
+        std::cout << "]) ---\n";
+
+        // Mostrar etiquetas
+        if (ndim == 2) // [N, D]
+        {
+            std::cout << "[";
+            for (size_t i = 0; i < label_size; ++i)
+            {
+                std::cout << host_data[i];
+                if (i < label_size - 1)
+                    std::cout << ", ";
+            }
+            std::cout << "]\n";
+        }
+        else if (ndim == 1) // [N]
+        {
+            std::cout << host_data[0] << "\n";
+        }
+        else
+        {
+            std::cerr << "printLabelAtIndex solo soporta tensores 1D o 2D (batch de etiquetas).\n";
+        }
+
+        std::cout << "\n";
+    }
 
     __device__ inline float &operator()(size_t i);
     __device__ inline float &operator()(size_t i, size_t j);

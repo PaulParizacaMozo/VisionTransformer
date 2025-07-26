@@ -10,6 +10,9 @@
 #include "layers/MultiHeadAttention.cuh"
 #include "losses/CrossEntropy.cuh"
 #include "model/TransformerEncoderBlock.cuh"
+#include "model/VisionTransformer.cuh"
+#include "model/Trainer.cuh"
+#include "utils/DataReader.cuh"
 #include <iostream>
 #include <vector>
 #include <assert.h>
@@ -814,6 +817,158 @@ void TestTransformerEncoderBlock()
     std::cout << "=== Test TransformerEncoderBlock completado ===" << std::endl;
 }
 
+void TestVisionTransformer()
+{
+    std::cout << "=== Test VisionTransformer ===" << std::endl;
+
+    // --- Configuración ---
+    ViTConfig config;
+    config.image_size = 28;
+    config.patch_size = 7;
+    config.in_channels = 1;
+    config.embedding_dim = 128;
+    config.num_heads = 8;
+    config.num_layers = 4;
+    config.mlp_hidden_dim = 512;
+    config.num_classes = 10;
+
+    size_t batch_size = 10;
+    Tensor input({batch_size, config.in_channels, config.image_size, config.image_size});
+    input.randomizeNormal(0.0f, 1.0f);
+    input.printDebugInfo("Input Tensor");
+    input.printContents("Input Image Tensor");
+
+    // --- Crear modelo ---
+    VisionTransformer vit(config);
+
+    // --- Forward ---
+    Tensor output = vit.forward(input, true);
+    output.printDebugInfo("VisionTransformer::forward output");
+    output.printContents("Output Logits");
+
+    assert(output.dims() == 2);
+    assert(output.dim(0) == batch_size);
+    assert(output.dim(1) == config.num_classes);
+
+    // --- Parámetros y gradientes (antes del backward) ---
+    auto params = vit.getParameters();
+    auto grads = vit.getGradients();
+
+    // std::cout << "[Antes del backward] Total Parámetros: " << params.size() << std::endl;
+    // for (size_t i = 0; i < params.size(); ++i)
+    // {
+    //     params[i]->printContents("Param [" + std::to_string(i) + "]");
+    //     grads[i]->printContents("Grad  [" + std::to_string(i) + "]");
+    // }
+
+    // --- Simulación de gradiente de salida ---
+    Tensor outGrad({batch_size, config.num_classes});
+    outGrad.randomizeNormal(0.0f, 1.0f);
+    outGrad.printContents("Output Gradient (Simulated)");
+
+    // --- Backward ---
+    Tensor inputGrad = vit.backward(outGrad);
+    inputGrad.printDebugInfo("VisionTransformer::backward output");
+    inputGrad.printContents("Input Gradient");
+
+    assert(inputGrad.dims() == 4);
+    assert(inputGrad.dim(0) == batch_size);
+    assert(inputGrad.dim(1) == config.in_channels);
+    assert(inputGrad.dim(2) == config.image_size);
+    assert(inputGrad.dim(3) == config.image_size);
+
+    auto params2 = vit.getParameters();
+    auto grads2 = vit.getGradients();
+
+    // std::cout << "[Después del backward] Total Parámetros: " << params2.size() << std::endl;
+    // for (size_t i = 0; i < params2.size(); ++i)
+    // {
+    //     params2[i]->printContents("Post-Param [" + std::to_string(i) + "]");
+    //     grads2[i]->printContents("Post-Grad  [" + std::to_string(i) + "]");
+    // }
+
+    std::cout << "=== Test VisionTransformer completado ===" << std::endl;
+}
+
+void TestLoadCSVData()
+{
+    std::cout << "=== Test load_csv_data ===" << std::endl;
+
+    const std::string filePath = "../data/mnist_train.csv";
+    float sample_fraction = 0.01f; // usar una pequeña fracción para pruebas rápidas
+
+    auto [features, labels] = load_csv_data(filePath, sample_fraction);
+
+    // --- Verificar contenido básico ---
+    features.printDebugInfo("Features tensor");
+    labels.printDebugInfo("Labels tensor");
+
+    // --- Aserciones básicas ---
+    assert(features.dim(0) == labels.dim(0));               // mismo número de muestras
+    assert(features.dims() == 4);                           // [N, C, H, W]
+    assert(features.dim(1) == 1);                           // canal único (MNIST)
+    assert(features.dim(2) == 28 && features.dim(3) == 28); // tamaño de imagen
+    assert(labels.dims() == 2);                             // one-hot [N, num_classes]
+
+    size_t num_samples = features.dim(0);
+    size_t num_channels = features.dim(1);
+    size_t height = features.dim(2);
+    size_t width = features.dim(3);
+    size_t num_classes = labels.dim(1);
+
+    std::cout << "Loaded " << num_samples << " samples with shape ["
+              << num_channels << ", " << height << ", " << width << "] and "
+              << num_classes << " classes.\n";
+
+    // --- Imprimir primeras muestras ---
+    std::cout << "--- Primeras 3 muestras ---" << std::endl;
+    for (size_t i = 0; i < std::min(num_samples, size_t(3)); ++i)
+    {
+        std::cout << "Sample " << i << ":\n";
+        features.printImageAtIndex("features", i);
+        labels.printLabelAtIndex("labels", i);
+    }
+
+    std::cout << "=== Test load_csv_data completado ===" << std::endl;
+}
+
+void TestTrainer()
+{
+    std::cout << "=== Test Trainer ===" << std::endl;
+    // --- 1. Definir Configuraciones ---
+    ViTConfig model_config;
+    model_config.embedding_dim = 128;
+    model_config.num_layers = 1;
+    model_config.num_heads = 2;
+    model_config.patch_size = 7;
+    model_config.mlp_hidden_dim = model_config.embedding_dim * 4;
+
+    TrainerConfig train_config;
+    train_config.epochs = 10;
+    train_config.batch_size = 64;
+    train_config.learning_rate = 0.0001f;
+
+    // --- 2. Cargar Datos ---
+    std::cout << "--- Cargando Datos de Fashion MNIST ---" << std::endl;
+    auto train_data = load_csv_data("../data/mnist_train.csv", 0.01f);
+    auto test_data = load_csv_data("../data/mnist_test.csv", 1.0f);
+
+    // --- 3. Crear Modelo y Entrenador ---
+    VisionTransformer model(model_config);
+    Trainer trainer(model, train_config);
+
+    // --- 4. Ejecutar el Entrenamiento y la Evaluación ---
+    trainer.train(train_data, test_data);
+
+    std::cout << "\n¡Entrenamiento completado!" << std::endl;
+
+    // --- 5. Guardar el Modelo ---
+    const std::string weights_path = "vit_fashion_mnist.weights.test";
+    std::cout << "\nGuardando pesos del modelo entrenado en: " << weights_path << std::endl;
+    // ModelUtils::save_weights(model, weights_path);
+    std::cout << "=== Test Trainer completado ===" << std::endl;
+}
+
 int main()
 {
     cudaDeviceSynchronize();
@@ -828,6 +983,9 @@ int main()
     //  TestFeedForward();
     //  TestLayerNorm();
     //  TestMultiHeadAttention();
-    TestTransformerEncoderBlock();
+    //  TestTransformerEncoderBlock();
+    //  TestVisionTransformer();
+    // TestLoadCSVData();
+    TestTrainer();
     return 0;
 }
