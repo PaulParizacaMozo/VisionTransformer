@@ -10,3 +10,6 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 vit_fashion_mnist*
+
+#Configs 
+.clang-format
