@@ -47,6 +47,7 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/include/activations
     ${PROJECT_SOURCE_DIR}/include/optimizers
     ${PROJECT_SOURCE_DIR}/include/losses
+    ${PROJECT_SOURCE_DIR}/include/model
 )
 
 # ------------------------------
@@ -59,10 +60,13 @@ set(SOURCES
     src/layers/PatchEmbedding.cu
     src/layers/Embeddings.cu
     src/layers/FeedForward.cu
+    src/layers/MultiHeadAttention.cu
+    src/layers/LayerNorm.cu
     src/activations/GELU.cu
     src/activations/RELU.cu
     src/optimizers/Adam.cu
     src/losses/CrossEntropy.cu
+    src/model/TransformerEncoderBlock.cu
 )
 
 # ------------------------------

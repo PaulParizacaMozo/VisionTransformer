@@ -9,6 +9,19 @@
 #include <cstdio>
 #include <curand_kernel.h>
 #include <cublas_v2.h>
+#include <cfloat>
+#include <ctime>
+#include <atomic>
+
+static std::atomic<unsigned long long> global_seed_counter(0);
+
+unsigned long long generateUniqueSeed()
+{
+    unsigned long long time_part = static_cast<unsigned long long>(time(NULL));
+    unsigned long long clock_part = static_cast<unsigned long long>(clock());
+    unsigned long long counter = global_seed_counter.fetch_add(1);
+    return time_part ^ (clock_part << 16) ^ counter;
+}
 
 __global__ void computeStridesKernel(const size_t *shape, size_t *strides, size_t ndim)
 {
@@ -154,6 +167,7 @@ Tensor::Tensor(Tensor &&other) noexcept
 // Asignación por copia
 Tensor &Tensor::operator=(const Tensor &other)
 {
+    // printf("===> Copia de tensor\n");
     if (this != &other)
     {
         if (data)
@@ -188,9 +202,51 @@ Tensor &Tensor::operator=(const Tensor &other)
     return *this;
 }
 
+void Tensor::deepCopyFrom(const Tensor &other)
+{
+    // printf("===> Copia de tensor\n");
+    if (this == &other)
+        return;
+
+    // Liberar memoria previa
+    if (data)
+        cudaFree(data);
+    if (shape)
+        cudaFree(shape);
+    if (strides)
+        cudaFree(strides);
+    if (shape_host_copy)
+        delete[] shape_host_copy;
+    if (strides_host_copy)
+        delete[] strides_host_copy;
+
+    // Copiar metadatos
+    ndim = other.ndim;
+    totalSize = other.totalSize;
+    dataOffset = other.dataOffset;
+
+    // Copiar forma y strides en host
+    shape_host_copy = new size_t[ndim];
+    strides_host_copy = new size_t[ndim];
+    std::memcpy(shape_host_copy, other.shape_host_copy, ndim * sizeof(size_t));
+    std::memcpy(strides_host_copy, other.strides_host_copy, ndim * sizeof(size_t));
+
+    // Copiar forma y strides en GPU
+    cudaMalloc(&shape, ndim * sizeof(size_t));
+    cudaMemcpy(shape, other.shape, ndim * sizeof(size_t), cudaMemcpyDeviceToDevice);
+
+    cudaMalloc(&strides, ndim * sizeof(size_t));
+    cudaMemcpy(strides, other.strides, ndim * sizeof(size_t), cudaMemcpyDeviceToDevice);
+
+    // Copiar datos en GPU
+    cudaMalloc(&data, totalSize * sizeof(float));
+    cudaMemcpy(data, other.data, totalSize * sizeof(float), cudaMemcpyDeviceToDevice);
+}
+
 // Asignación por movimiento
 Tensor &Tensor::operator=(Tensor &&other) noexcept
 {
+    // printf("===> Movimiento de tensor\n");
     if (this != &other)
     {
         if (data)
@@ -290,8 +346,7 @@ void Tensor::randomize(float min, float max)
         throw std::runtime_error("randomize() solo se puede usar en tensores contiguos.");
     int threads = 256;
     int blocks = (totalSize + threads - 1) / threads;
-
-    unsigned long long seed = static_cast<unsigned long long>(time(NULL));
+    unsigned long long seed = generateUniqueSeed();
     randomUniformKernel<<<blocks, threads>>>(data + dataOffset, totalSize, min, max, seed);
     cudaDeviceSynchronize();
 }
@@ -314,8 +369,7 @@ void Tensor::randomizeNormal(float mean, float stddev)
 
     int threads = 256;
     int blocks = (totalSize + threads - 1) / threads;
-
-    unsigned long long seed = static_cast<unsigned long long>(time(NULL));
+    unsigned long long seed = generateUniqueSeed();
     randomNormalKernel<<<blocks, threads>>>(data + dataOffset, totalSize, mean, stddev, seed);
     cudaDeviceSynchronize();
 }
@@ -420,8 +474,9 @@ Tensor Tensor::contiguous() const
     // Copiamos los datos desde el offset
     int threads = 256;
     int blocks = (totalSize + threads - 1) / threads;
+    cudaGetLastError();
     copyContiguousKernel<<<blocks, threads>>>(out.data, this->data, totalSize, dataOffset);
-
+    cudaDeviceSynchronize();
     // Verificación de errores CUDA
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
@@ -449,6 +504,7 @@ Tensor Tensor::operator+(const Tensor &other) const
     Tensor result(shape_host_copy, ndim);
     int threads = 256;
     int blocks = (totalSize + threads - 1) / threads;
+    cudaGetLastError();
     addKernel<<<blocks, threads>>>(
         this->data,
         other.data,
@@ -700,6 +756,58 @@ Tensor matrixMultiply(const Tensor &a, const Tensor &b)
     return result;
 }
 
+Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b)
+{
+    if (a.dims() != 3 || b.dims() != 3)
+        throw std::runtime_error("batchMatrixMultiply: solo soporta tensores 3D");
+
+    const size_t B = a.dim(0);
+    const size_t M = a.dim(1);
+    const size_t K = a.dim(2);
+    const size_t Kb = b.dim(1);
+    const size_t N = b.dim(2);
+
+    if (B != b.dim(0) || K != Kb)
+        throw std::runtime_error("batchMatrixMultiply: dimensiones incompatibles entre a y b");
+
+    Tensor result({B, M, N});
+
+    const float *A = a.getData() + a.getDataOffset();
+    const float *Bptr = b.getData() + b.getDataOffset();
+    float *C = result.getData();
+
+    const size_t strideA = M * K;
+    const size_t strideB = K * N;
+    const size_t strideC = M * N;
+
+    const int lda = K;
+    const int ldb = N;
+    const int ldc = N;
+
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+
+    cublasStatus_t status = cublasSgemmStridedBatched(
+        handle,
+        CUBLAS_OP_N, CUBLAS_OP_N, // A: [M,K], B: [K,N]
+        N, M, K,                  // Cada C_i: [M,N]
+        &alpha,
+        Bptr, ldb, strideB,
+        A, lda, strideA,
+        &beta,
+        C, ldc, strideC,
+        B);
+
+    if (status != CUBLAS_STATUS_SUCCESS)
+        throw std::runtime_error("batchMatrixMultiply: error en cublasSgemmStridedBatched");
+
+    cublasDestroy(handle);
+    return result;
+}
+
 // Kernel para concatenar tensores 3D en GPU// Kernel para concatenar tensores 3D en GPU
 __global__ void concat3DKernel(const float *src, float *dst,
                                size_t offset, size_t dim0, size_t dim1, size_t dim2,
@@ -853,4 +961,142 @@ Tensor expand(const Tensor &tensor, size_t dim, size_t size)
 
     cudaDeviceSynchronize();
     return expanded;
+}
+
+__global__ void softmax3DAxis2Kernel(const float *logits, float *output,
+                                     size_t B, size_t N, size_t D)
+{
+    // Cada hilo procesa un vector de tamaño D (softmax sobre ese vector)
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= B * N)
+        return;
+
+    size_t b = idx / N;
+    size_t n = idx % N;
+
+    // Índice base para el vector logits[b, n, :]
+    size_t base = (b * N + n) * D;
+
+    // Paso 1: encontrar el máximo
+    float max_val = -FLT_MAX;
+    for (size_t d = 0; d < D; ++d)
+    {
+        float val = logits[base + d];
+        if (val > max_val)
+            max_val = val;
+    }
+
+    // Paso 2: calcular suma de exp
+    float sum_exp = 0.0f;
+    for (size_t d = 0; d < D; ++d)
+    {
+        float exp_val = expf(logits[base + d] - max_val);
+        output[base + d] = exp_val; // temporal
+        sum_exp += exp_val;
+    }
+
+    // Paso 3: normalizar
+    for (size_t d = 0; d < D; ++d)
+    {
+        output[base + d] /= sum_exp;
+    }
+}
+
+Tensor softmax(const Tensor &logits, int axis)
+{
+    if (logits.getNDim() != 3)
+        throw std::runtime_error("Softmax: solo se soportan tensores 3D");
+
+    if (axis < 0)
+        axis += logits.getNDim();
+
+    if (axis != 2)
+        throw std::runtime_error("Softmax: solo se soporta axis == 2 (última dimensión)");
+
+    size_t B = logits.dim(0);
+    size_t N = logits.dim(1);
+    size_t D = logits.dim(2);
+
+    Tensor result(logits.getShapeHost(), logits.getNDim());
+
+    const float *logits_ptr = logits.getData();
+    float *output_ptr = result.getData();
+
+    size_t totalRows = B * N;
+    constexpr int threadsPerBlock = 128;
+    int blocks = (totalRows + threadsPerBlock - 1) / threadsPerBlock;
+    cudaGetLastError();
+    softmax3DAxis2Kernel<<<blocks, threadsPerBlock>>>(logits_ptr, output_ptr, B, N, D);
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "[CUDA ERROR - softmax] " << cudaGetErrorString(err) << std::endl;
+        throw std::runtime_error("softmax: Error tras lanzar kernel");
+    }
+
+    return result;
+}
+
+__global__ void softmaxBackward3DAxis2Kernel(const float *grad_output, const float *softmax_output,
+                                             float *grad_input,
+                                             size_t B, size_t N, size_t D)
+{
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= B * N)
+        return;
+
+    size_t b = idx / N;
+    size_t n = idx % N;
+
+    size_t base = (b * N + n) * D;
+
+    // Paso 1: calcular el producto punto grad_output * softmax_output
+    float dot = 0.0f;
+    for (size_t d = 0; d < D; ++d)
+    {
+        dot += grad_output[base + d] * softmax_output[base + d];
+    }
+
+    // Paso 2: calcular el gradiente dL/dZ = s_i * (dL/dS_i - dot)
+    for (size_t d = 0; d < D; ++d)
+    {
+        float s = softmax_output[base + d];
+        grad_input[base + d] = s * (grad_output[base + d] - dot);
+    }
+}
+
+Tensor softmax_backward(const Tensor &grad_output, const Tensor &softmax_output)
+{
+    if (grad_output.getNDim() != 3 || softmax_output.getNDim() != 3)
+        throw std::runtime_error("softmax_backward: solo se soportan tensores 3D");
+
+    size_t B = grad_output.dim(0);
+    size_t N = grad_output.dim(1);
+    size_t D = grad_output.dim(2);
+
+    Tensor grad_input(grad_output.getShapeHost(), grad_output.getNDim());
+
+    const float *grad_output_ptr = grad_output.getData();
+    const float *softmax_output_ptr = softmax_output.getData();
+    float *grad_input_ptr = grad_input.getData();
+
+    size_t totalRows = B * N;
+    constexpr int threadsPerBlock = 128;
+    int blocks = (totalRows + threadsPerBlock - 1) / threadsPerBlock;
+    cudaGetLastError();
+    softmaxBackward3DAxis2Kernel<<<blocks, threadsPerBlock>>>(
+        grad_output_ptr,
+        softmax_output_ptr,
+        grad_input_ptr,
+        B, N, D);
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "[CUDA ERROR - softmax_backward] " << cudaGetErrorString(err) << std::endl;
+        throw std::runtime_error("softmax_backward: Error tras lanzar kernel");
+    }
+
+    return grad_input;
 }

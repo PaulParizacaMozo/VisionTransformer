@@ -6,7 +6,10 @@
 #include "layers/PatchEmbedding.cuh"
 #include "layers/Embeddings.cuh"
 #include "layers/FeedForward.cuh"
+#include "layers/LayerNorm.cuh"
+#include "layers/MultiHeadAttention.cuh"
 #include "losses/CrossEntropy.cuh"
+#include "model/TransformerEncoderBlock.cuh"
 #include <iostream>
 #include <vector>
 #include <assert.h>
@@ -82,6 +85,7 @@ void TestTensor()
     MM1.printContents("MM1 contents");
     MM2.printContents("MM2 contents");
     MM.printContents("MM contents");
+
     // --- Test concatenate ---
     Tensor T1({2, 4, 16});
     Tensor T2({2, 1, 16});
@@ -101,6 +105,49 @@ void TestTensor()
     Vexp.printDebugInfo("Expand V(3,5) along dim=0 to 2");
     V.printContents("V contents");
     Vexp.printContents("V expanded contents");
+
+    // --- Test softmax ---
+    Tensor S({2, 3, 4}); // B=2, N=3, D=4
+    S.randomize();
+    Tensor S_sm = softmax(S, 2); // Softmax sobre última dimensión
+
+    S_sm.printDebugInfo("Softmax(S, axis=2)");
+    S.printContents("Input S contents");
+    S_sm.printContents("Softmax output contents");
+
+    // --- Test softmax_backward ---
+    Tensor Sb({2, 3, 4}); // B=2, N=3, D=4
+    Sb.randomize();
+    Tensor S_smb = softmax(Sb, 2); // Forward
+
+    Tensor grad_output({2, 3, 4});
+    grad_output.randomize(); // Simula el gradiente dL/dS
+
+    Tensor grad_input = softmax_backward(grad_output, S_smb); // dL/dZ
+
+    // Prints
+    grad_output.printDebugInfo("Grad output dL/dS");
+    grad_output.printContents("Grad output contents");
+
+    S_smb.printDebugInfo("Softmax output");
+    S_smb.printContents("Softmax output contents");
+
+    grad_input.printDebugInfo("Grad input dL/dZ");
+    grad_input.printContents("Grad input contents");
+
+    // --- Test batchMatrixMultiply ---
+    Tensor BMM1({2, 4, 5}); // B = 2, M = 4, K = 5
+    Tensor BMM2({2, 5, 6}); // B = 2, K = 5, N = 6
+    BMM1.randomize();
+    BMM2.randomize();
+
+    Tensor BMM = batchMatrixMultiply(BMM1, BMM2);
+
+    BMM.printDebugInfo("batchMatrixMultiply(BMM1, BMM2)");
+    BMM1.printContents("BMM1 contents");
+    BMM2.printContents("BMM2 contents");
+    BMM.printContents("BMM contents");
+
     std::cout << "=== Test Tensor completado ===\n";
 }
 
@@ -527,17 +574,260 @@ void TestFeedForward()
     std::cout << "=== Test FeedForward completado ===" << std::endl;
 }
 
+void TestLayerNorm()
+{
+    std::cout << "=== Test LayerNorm Layer ===" << std::endl;
+
+    // --- Parámetros de prueba ---
+    size_t batch_size = 2;
+    size_t num_patches = 4;
+    size_t embedding_dim = 16;
+
+    // --- Input simulado ---
+    Tensor input({batch_size, num_patches, embedding_dim});
+    input.randomize();
+    input.printContents("Input Tensor");
+
+    // --- Crear capa LayerNorm ---
+    LayerNorm layerNorm(embedding_dim); // Normaliza sobre última dimensión
+
+    // --- Forward ---
+    Tensor output = layerNorm.forward(input, true);
+    output.printDebugInfo("LayerNorm::forward output");
+    output.printContents("LayerNorm Output");
+
+    // Verifica forma de salida: igual que input
+    assert(output.dims() == 3);
+    assert(output.dim(0) == batch_size);
+    assert(output.dim(1) == num_patches);
+    assert(output.dim(2) == embedding_dim);
+
+    // --- Backward ---
+    Tensor outGrad({batch_size, num_patches, embedding_dim});
+    outGrad.randomize();
+    outGrad.printContents("Output Gradient (Simulated)");
+
+    Tensor inputGrad = layerNorm.backward(outGrad);
+    inputGrad.printDebugInfo("LayerNorm::backward output");
+    inputGrad.printContents("Input Gradient");
+
+    // Verifica que el gradiente tenga misma forma que el input
+    assert(inputGrad.dims() == 3);
+    assert(inputGrad.dim(0) == batch_size);
+    assert(inputGrad.dim(1) == num_patches);
+    assert(inputGrad.dim(2) == embedding_dim);
+
+    // --- Parámetros entrenables ---
+    auto params = layerNorm.getParameters();
+    auto grads = layerNorm.getGradients();
+
+    assert(params.size() == 2); // gamma y beta
+    assert(grads.size() == 2);
+
+    params[0]->printDebugInfo("Gamma (Escala)");
+    params[1]->printDebugInfo("Beta (Desplazamiento)");
+
+    grads[0]->printDebugInfo("Gamma Gradient");
+    grads[1]->printDebugInfo("Beta Gradient");
+
+    std::cout << "=== Test LayerNorm completado ===" << std::endl;
+}
+
+void TestMultiHeadAttention()
+{
+    std::cout << "=== Test MultiHeadAttention Layer ===" << std::endl;
+
+    // --- Parámetros de prueba ---
+    size_t batch_size = 2;
+    size_t num_patches = 4;
+    size_t embedding_dim = 16;
+    size_t num_heads = 2;
+    // size_t batch_size = 1;
+    // size_t num_patches = 2;
+    // size_t embedding_dim = 4;
+    // size_t num_heads = 2;
+
+    // --- Input simulado ---
+    Tensor input({batch_size, num_patches, embedding_dim});
+    input.randomize();
+    input.printContents("Input Tensor");
+
+    // // --- Crear capa MultiHeadAttention ---
+    MultiHeadAttention mha(embedding_dim, num_heads);
+
+    // --- Forward ---
+    Tensor output = mha.forward(input, true);
+    output.printDebugInfo("MultiHeadAttention::forward output");
+    output.printContents("Attention Output");
+
+    // Verifica forma de salida: igual a input (batch, seq_len, embedding_dim)
+    assert(output.dims() == 3);
+    assert(output.dim(0) == batch_size);
+    assert(output.dim(1) == num_patches);
+    assert(output.dim(2) == embedding_dim);
+
+    auto params = mha.getParameters();
+    auto grads = mha.getGradients();
+
+    assert(params.size() == 8);
+    assert(grads.size() == 8);
+
+    params[0]->printContents("Q Projection Weights");
+    params[1]->printContents("Q Projection Bias");
+    params[2]->printContents("K Projection Weights");
+    params[3]->printContents("K Projection Bias");
+    params[4]->printContents("V Projection Weights");
+    params[5]->printContents("V Projection Bias");
+    params[6]->printContents("Output Projection Weights");
+    params[7]->printContents("Output Projection Bias");
+
+    grads[0]->printContents("Q Projection Grad Weights");
+    grads[1]->printContents("Q Projection Grad Bias");
+    grads[2]->printContents("K Projection Grad Weights");
+    grads[3]->printContents("K Projection Grad Bias");
+    grads[4]->printContents("V Projection Grad Weights");
+    grads[5]->printContents("V Projection Grad Bias");
+    grads[6]->printContents("Output Projection Grad Weights");
+    grads[7]->printContents("Output Projection Grad Bias");
+
+    // --- Backward ---
+    Tensor outGrad({batch_size, num_patches, embedding_dim});
+    outGrad.randomize();
+    outGrad.printContents("Output Gradient (Simulated)");
+
+    Tensor inputGrad = mha.backward(outGrad);
+    inputGrad.printDebugInfo("MultiHeadAttention::backward output");
+    inputGrad.printContents("Input Gradient");
+
+    // Verifica que el gradiente tenga misma forma que el input
+    assert(inputGrad.dims() == 3);
+    assert(inputGrad.dim(0) == batch_size);
+    assert(inputGrad.dim(1) == num_patches);
+    assert(inputGrad.dim(2) == embedding_dim);
+
+    // --- Parámetros entrenables ---
+    params = mha.getParameters();
+    grads = mha.getGradients();
+
+    assert(params.size() == 8);
+    assert(grads.size() == 8);
+
+    params[0]->printContents("Q Projection Weights");
+    params[1]->printContents("Q Projection Bias");
+    params[2]->printContents("K Projection Weights");
+    params[3]->printContents("K Projection Bias");
+    params[4]->printContents("V Projection Weights");
+    params[5]->printContents("V Projection Bias");
+    params[6]->printContents("Output Projection Weights");
+    params[7]->printContents("Output Projection Bias");
+
+    grads[0]->printContents("Q Projection Grad Weights");
+    grads[1]->printContents("Q Projection Grad Bias");
+    grads[2]->printContents("K Projection Grad Weights");
+    grads[3]->printContents("K Projection Grad Bias");
+    grads[4]->printContents("V Projection Grad Weights");
+    grads[5]->printContents("V Projection Grad Bias");
+    grads[6]->printContents("Output Projection Grad Weights");
+    grads[7]->printContents("Output Projection Grad Bias");
+
+    std::cout << "=== Test MultiHeadAttention completado ===" << std::endl;
+}
+
+void TestTransformerEncoderBlock()
+{
+    std::cout << "=== Test TransformerEncoderBlock ===" << std::endl;
+
+    // --- Configuración ---
+    size_t batch_size = 2;
+    size_t num_tokens = 4;
+    size_t embedding_dim = 16;
+    size_t num_heads = 4;
+    size_t mlp_hidden_dim = 64;
+
+    // --- Entrada simulada ---
+    Tensor input({batch_size, num_tokens, embedding_dim});
+    input.randomize();
+    input.printContents("Input Tensor");
+
+    // --- Crear bloque ---
+    TransformerEncoderBlock encoder(embedding_dim, num_heads, mlp_hidden_dim);
+
+    // --- Forward ---
+    Tensor output = encoder.forward(input, true);
+    output.printDebugInfo("TransformerEncoderBlock::forward output");
+    output.printContents("Encoder Output");
+
+    assert(output.dims() == 3);
+    assert(output.dim(0) == batch_size);
+    assert(output.dim(1) == num_tokens);
+    assert(output.dim(2) == embedding_dim);
+
+    // --- Parámetros y gradientes (antes del backward) ---
+    std::vector<std::string> paramNames = {
+        // norm1
+        "LayerNorm1::gamma", "LayerNorm1::beta",
+        // Attention: Q, K, V, Out
+        "Q Projection::weights", "Q Projection::bias",
+        "K Projection::weights", "K Projection::bias",
+        "V Projection::weights", "V Projection::bias",
+        "Out Projection::weights", "Out Projection::bias",
+        // norm2
+        "LayerNorm2::gamma", "LayerNorm2::beta",
+        // FeedForward: Dense1 & Dense2
+        "FFN::Dense1::weights", "FFN::Dense1::bias",
+        "FFN::Dense2::weights", "FFN::Dense2::bias"};
+
+    auto params = encoder.getParameters();
+    auto grads = encoder.getGradients();
+
+    std::cout << "[Antes del backward] Total Parámetros: " << params.size() << std::endl;
+    for (size_t i = 0; i < params.size(); ++i)
+    {
+        params[i]->printContents("Param [" + std::to_string(i) + "]: " + paramNames[i]);
+        grads[i]->printContents("Grad  [" + std::to_string(i) + "]: " + paramNames[i]);
+    }
+
+    // --- Backward ---
+    Tensor outGrad({batch_size, num_tokens, embedding_dim});
+    outGrad.randomize();
+    outGrad.printContents("Output Gradient (Simulated)");
+
+    Tensor inputGrad = encoder.backward(outGrad);
+    inputGrad.printDebugInfo("TransformerEncoderBlock::backward output");
+    inputGrad.printContents("Input Gradient");
+
+    assert(inputGrad.dims() == 3);
+    assert(inputGrad.dim(0) == batch_size);
+    assert(inputGrad.dim(1) == num_tokens);
+    assert(inputGrad.dim(2) == embedding_dim);
+
+    auto params2 = encoder.getParameters();
+    auto grads2 = encoder.getGradients();
+
+    std::cout << "[Después del backward] Total Parámetros: " << params.size() << std::endl;
+    for (size_t i = 0; i < params.size(); ++i)
+    {
+        params2[i]->printContents("Post-Param [" + std::to_string(i) + "]: " + paramNames[i]);
+        grads2[i]->printContents("Post-Grad  [" + std::to_string(i) + "]: " + paramNames[i]);
+    }
+
+    std::cout << "=== Test TransformerEncoderBlock completado ===" << std::endl;
+}
+
 int main()
 {
     cudaDeviceSynchronize();
-    TestTensor();
-    TestDense();
-    TestGELU();
-    TestReLU();
-    TestAdam();
-    TestCrossEntropyAndSoftmax();
-    TestPatchEmbedding();
-    TestEmbeddings();
-    TestFeedForward();
+    //  TestTensor();
+    //  TestDense();
+    //  TestGELU();
+    //  TestReLU();
+    //  TestAdam();
+    //  TestCrossEntropyAndSoftmax();
+    //  TestPatchEmbedding();
+    //  TestEmbeddings();
+    //  TestFeedForward();
+    //  TestLayerNorm();
+    //  TestMultiHeadAttention();
+    TestTransformerEncoderBlock();
     return 0;
 }

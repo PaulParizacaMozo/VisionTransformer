@@ -51,6 +51,7 @@ public:
     Tensor(const Tensor &other);                   // Copia profunda GPU-GPU
     Tensor(Tensor &&other) noexcept;
     Tensor &operator=(const Tensor &other);
+    void deepCopyFrom(const Tensor &other);
     Tensor &operator=(Tensor &&other) noexcept;
     ~Tensor();
     void copyFromHost(const float *srcHost)
@@ -98,6 +99,9 @@ public:
         }
         std::cout << "]) ---\n";
 
+        if (!isContiguous())
+            std::cout << "⚠️  Advertencia: Tensor no contiguo en memoria (strides no estándar).\n";
+
         // Recursively print tensor contents
         std::function<void(size_t, size_t)> recursivePrint = [&](size_t dim, size_t offset)
         {
@@ -141,5 +145,8 @@ public:
 
 // --- Funciones auxiliares GPU ---
 Tensor matrixMultiply(const Tensor &a, const Tensor &b);
+Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b);
 Tensor concatenate(const Tensor *tensors, size_t numTensors, size_t axis);
 Tensor expand(const Tensor &tensor, size_t dim, size_t size);
+Tensor softmax(const Tensor &logits, int axis);
+Tensor softmax_backward(const Tensor &grad_output, const Tensor &softmax_output);
