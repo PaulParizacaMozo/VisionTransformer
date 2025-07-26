@@ -1,6 +1,7 @@
 #ifndef VISUALIZADOR_H
 #define VISUALIZADOR_H
 
+#include <opencv2/opencv.hpp>
 #include "core/Tensor.hpp"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
