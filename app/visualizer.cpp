@@ -14,7 +14,7 @@ int main() {
         }
         
         // Cargar pesos preentrenados
-        ModelUtils::load_weights(vis.modelo, "vit_mnist.weights.test");
+        vis.cargarPesos("vit_mnist.weights.test");
         vis.ejecutar();
     } 
     catch(const exception& excepGOD) 

@@ -9,9 +9,14 @@ constexpr float DESV_EST=0.3081f;
 
 using namespace std;
 
-Visualizador::Visualizador(int ancho,int alto) 
-    : ventana(nullptr),ancho_ventana(ancho),alto_ventana(alto),textura_id(0) 
-    {}
+Visualizador::Visualizador(int ancho, int alto, const ViTConfig &cfg)
+    : ventana(nullptr),
+      ancho_ventana(ancho),
+      alto_ventana(alto),
+      modelo(cfg),               // construyendo el ViT con sus hiperparámetros
+      camara(0),
+      textura_id(0)
+ {}
 
 Visualizador::~Visualizador() 
 {
@@ -71,7 +76,7 @@ void Visualizador::cargarTextura(const cv::Mat& imagen)
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,imagen.cols,imagen.rows,0,GL_BGR,GL_UNSIGNED_BYTE,imagen.data);
 }
 
-Tensor Visualizador::capturarImagen() const {
+Tensor Visualizador::capturarImagen() {
     cv::Mat frame;
     camara>>frame;
     
@@ -95,8 +100,9 @@ Tensor Visualizador::capturarImagen() const {
     return imagen;
 }
 
-Tensor Visualizador::predecir(const Tensor& entrada) const {
-    return modelo.predict(entrada);
+Tensor Visualizador::predecir(const Tensor& entrada) {
+    // isTraining=false para inferencia
+    return modelo.forward(entrada, /*isTraining=*/false);
 }
 
 void Visualizador::ejecutar() 

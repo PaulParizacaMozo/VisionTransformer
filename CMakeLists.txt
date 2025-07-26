@@ -1,29 +1,20 @@
 cmake_minimum_required(VERSION 3.10)
 
 # --- Información del Proyecto ---
-project(ViT CXX)
+project(ViT LANGUAGES CXX)
 
 # --- Estándar del Lenguaje ---
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-#VISUALIZADOR
-set(VISUALIZER_SOURCE "app/visualizer.cpp")
-
-
-# --- Configuración de Tipos de Compilación y Flags ---
+# --- Tipo de compilación por defecto y flags generales ---
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build type: Debug, Release, RelWithDebInfo, MinSizeRel." FORCE)
 endif()
 
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
-
-# Flags específicos por tipo de compilación.
-# -O3: Máxima optimización para velocidad. -DNDEBUG: Desactiva las aserciones.
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
-# -g: Incluye símbolos de depuración. -O0: Desactiva todas las optimizaciones.
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 
 message(STATUS "Project Name: ${PROJECT_NAME}")
@@ -32,41 +23,50 @@ message(STATUS "Compiler flags: ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUI
 
 # --- Búsqueda de Dependencias ---
 find_package(OpenMP REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(OpenGL REQUIRED)
+find_package(glfw3 3.3 REQUIRED)
+find_package(GLEW REQUIRED)
 
-# --- Configuración de Directorios ---
-include_directories(include)
-
-# --- Recopilación de Archivos Fuente ---
-file(GLOB_RECURSE SOURCES
-    "src/*.cpp"
+# --- Directorios de include ---
+include_directories(
+    ${CMAKE_SOURCE_DIR}/include
+    ${OpenCV_INCLUDE_DIRS}
 )
 
-set(MAIN_SOURCE "app/main.cpp")
-set(TEST_SOURCE "app/test.cpp")
-set(TEST_IMAGE_SOURCE "app/testImage.cpp")
+# --- Fuentes del núcleo (modelo, utils, layers, etc) ---
+file(GLOB_RECURSE CORE_SOURCES
+    src/*.cpp
+    include/utils/*.hpp
+)
 
-# --- Creación del Ejecutable ---
-add_executable(${PROJECT_NAME} ${MAIN_SOURCE} ${SOURCES})
+# --- Crear biblioteca estática del core ---
+add_library(core STATIC ${CORE_SOURCES})
 
-# --- Creación del Ejecutable para el Test ---
-add_executable(test ${TEST_SOURCE} ${SOURCES}) 
+target_link_libraries(core
+  PUBLIC
+    OpenMP::OpenMP_CXX
+    ${OpenCV_LIBS}
+)
 
-# --- Creación del Ejecutable para el TestImage ---
-add_executable(testImage ${TEST_IMAGE_SOURCE} ${SOURCES})
+# --- Ejecutables ---
+# VisionTransformer (sin visualizador)
+add_executable(${PROJECT_NAME} app/main.cpp)
+# Test de consola
+add_executable(test        app/test.cpp)
+add_executable(testImage   app/testImage.cpp)
+# Visualizador gráfico
+add_executable(visualizer  app/visualizer.cpp src/Visualizer.cpp)
 
-#VISUALIZADOR
-add_executable(visualizer ${VISUALIZER_SOURCE} src/Visualizer.cpp)
-
-
-# --- Enlace de Librerías ---
-if(OpenMP_FOUND)
-    message(STATUS "OpenMP encontrado, enlazando...")
-    target_link_libraries(${PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
-    target_link_libraries(test PRIVATE OpenMP::OpenMP_CXX)  
-    #VISUALIZADOR
-    target_link_libraries(visualizer ${OpenCV_LIBS} ${OPENGL_LIBRARIES} glfw GLEW)
-else()
-    message(WARNING "OpenMP no se encontró. La compilación continuará sin paralelización.")
-endif()
+# --- Ligar ejecutables con core y dependencias externas ---
+foreach(target ${PROJECT_NAME} test testImage visualizer)
+  target_link_libraries(${target}
+    PRIVATE
+      core
+      ${OPENGL_gl_LIBRARY}
+      glfw
+      GLEW::GLEW
+  )
+endforeach()
 
 message(STATUS "Configuración de CMake para ${PROJECT_NAME} completada.")
