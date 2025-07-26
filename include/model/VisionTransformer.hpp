@@ -22,6 +22,7 @@ struct ViTConfig {
   size_t num_heads = 8;
   size_t num_layers = 4;       // Número de bloques encoder
   size_t mlp_hidden_dim = 512; // embedding_dim * 4 es una buena regla general
+  float dropout_rate = 0.1;    // (0.1 o 10% es un buen default)
 };
 
 /**
