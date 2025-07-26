@@ -62,8 +62,15 @@ run_app() {
 
 run_test() {
   echo "--- Ejecutando pruebas sobre el conjunto de test ---"
-  ./${BUILD_DIR}/test  # Ejecutamos el test de predicción
+  ./${BUILD_DIR}/test # Ejecutamos el test de predicción
   echo "--- Pruebas finalizadas ---"
+}
+
+run_image() {
+  local image_path="$1"
+  echo "--- Ejecutando testImage con imagen '${image_path}' ---"
+  ./${BUILD_DIR}/testImage "${image_path}"
+  echo "--- Predicción completada ---"
 }
 
 # --- Flujo Principal ---
@@ -74,9 +81,13 @@ echo "Proyecto: ${PROJECT_NAME}, Tipo de Compilación: ${BUILD_TYPE}"
 if [ "$1" == "test" ]; then
   build_project
   run_test
+elif [ "$1" == "image" ]; then
+  build_project
+  run_image "$2"
 else
   build_project
   run_app
 fi
 
 exit 0
+

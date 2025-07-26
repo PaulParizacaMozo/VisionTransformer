@@ -39,12 +39,16 @@ file(GLOB_RECURSE SOURCES
 
 set(MAIN_SOURCE "app/main.cpp")
 set(TEST_SOURCE "app/test.cpp")
+set(TEST_IMAGE_SOURCE "app/testImage.cpp")
 
 # --- Creación del Ejecutable ---
 add_executable(${PROJECT_NAME} ${MAIN_SOURCE} ${SOURCES})
 
 # --- Creación del Ejecutable para el Test ---
 add_executable(test ${TEST_SOURCE} ${SOURCES}) 
+
+# --- Creación del Ejecutable para el TestImage ---
+add_executable(testImage ${TEST_IMAGE_SOURCE} ${SOURCES})
 
 # --- Enlace de Librerías ---
 if(OpenMP_FOUND)
