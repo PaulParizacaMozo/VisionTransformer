@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
         VisionTransformer model(model_config);
 
         // --- 2. Cargar pesos del Modelo ---
-        const std::string weights_path = "vit_fashion_mnist.weights.30.ep";
+        const std::string weights_path = "models/vit_fashion_mnist.weights.30.ep";
         std::cout << "\nCargando pesos del modelo en: " << weights_path << std::endl;
         ModelUtils::load_weights(model, weights_path);
         //std::cout << "Pesos cargados correctamente.\n";

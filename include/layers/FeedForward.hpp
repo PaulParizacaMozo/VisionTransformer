@@ -4,6 +4,7 @@
 #include "activations/GELU.hpp" // <-- Cambiar ReLU por GELU
 #include "activations/ReLU.hpp" // O GELU si decides implementarla más adelante
 #include "layers/Dense.hpp"
+#include "layers/Dropout.hpp"
 #include "layers/Layer.hpp"
 #include <vector>
 
@@ -19,10 +20,11 @@ class FeedForward : public Layer {
 public:
   /**
    * @brief Constructor de la red Feed-Forward.
-   * @param embedding_dim La dimensión de entrada y salida de la capa (ej. 128).
-   * @param hidden_dim La dimensión de la capa oculta interna (típicamente 4 * embedding_dim).
+   * @param embedding_dim Dimensión de entrada y salida.
+   * @param hidden_dim Dimensión de la capa oculta.
+   * @param dropout_rate Tasa de dropout a aplicar al final.
    */
-  FeedForward(size_t embedding_dim, size_t hidden_dim);
+  FeedForward(size_t embedding_dim, size_t hidden_dim, float dropout_rate);
 
   /**
    * @brief Realiza el paso hacia adelante.
@@ -65,6 +67,7 @@ private:
   Dense dense1;
   GELU activation;
   Dense dense2;
+  Dropout dropout;
 };
 
 #endif // FEEDFORWARD_HPP

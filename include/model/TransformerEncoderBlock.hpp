@@ -1,7 +1,8 @@
 #ifndef TRANSFORMERENCODERBLOCK_HPP
 #define TRANSFORMERENCODERBLOCK_HPP
 
-#include "layers/FeedForward.hpp" // La clase que acabamos de crear
+#include "layers/Dropout.hpp"
+#include "layers/FeedForward.hpp"
 #include "layers/Layer.hpp"
 #include "layers/LayerNorm.hpp"
 #include "layers/MultiHeadAttention.hpp"
@@ -24,8 +25,9 @@ public:
    * @param embedding_dim La dimensión de los embeddings (D).
    * @param num_heads El número de cabezas de atención (h).
    * @param mlp_hidden_dim La dimensión oculta de la red Feed-Forward.
+   * @param dropout_rate La tasa de dropout para ambas capas de dropout.
    */
-  TransformerEncoderBlock(size_t embedding_dim, size_t num_heads, size_t mlp_hidden_dim);
+  TransformerEncoderBlock(size_t embedding_dim, size_t num_heads, size_t mlp_hidden_dim, float dropout_rate);
 
   /**
    * @brief Realiza el paso hacia adelante a través del bloque completo.
@@ -66,6 +68,7 @@ private:
   // Componentes del bloque
   LayerNorm norm1;
   MultiHeadAttention attention;
+  Dropout attention_dropout;
   LayerNorm norm2;
   FeedForward ffn;
 
