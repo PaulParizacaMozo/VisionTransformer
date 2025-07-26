@@ -24,7 +24,7 @@ int main() {
         }
         
         // Cargar pesos preentrenados
-        vis.cargarPesos("vit_mnist.weights.test");
+        vis.cargarPesos("../vit_fashion_mnist.weights.30.ep");
         cout << "Pesos cargados correctamente!" << endl;
         vis.ejecutar();
     } 

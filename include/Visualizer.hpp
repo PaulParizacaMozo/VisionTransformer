@@ -8,22 +8,22 @@
 #include <GLFW/glfw3.h>
 #include "utils/ModelUtils.hpp"
 
-
 class Visualizador {
 public:
-    Visualizador(int ancho=640, int alto=480, const ViTConfig &cfg = ViTConfig());
+    Visualizador(int ancho = 640, int alto = 480, const ViTConfig &cfg = ViTConfig());
     ~Visualizador();
-    
+
     bool inicializar();
     void ejecutar();
     Tensor capturarImagen();
-    Tensor predecir(const Tensor& entrada);
+    Tensor predecir(const Tensor &entrada);
 
     VisionTransformer modelo;
-
     void cargarPesos(const std::string &ruta) {
-      ModelUtils::load_weights(modelo, ruta);
+        ModelUtils::load_weights(modelo, ruta);
     }
+
+    Tensor procesarImagen(cv::Mat& img);
 
 private:
     GLFWwindow* ventana;
@@ -31,11 +31,15 @@ private:
     int alto_ventana;
     cv::VideoCapture camara;
     GLuint textura_id;
-    
-    void cargarTextura(const cv::Mat& imagen);
-    static void callbackTeclado(GLFWwindow* ventana, int tecla, int scancode, int accion, int mods);
-    
-    std::string ultima_prediccion; // Para almacenar el resultado
+
+    std::string ultima_prediccion;
+
+    void cargarTextura(const cv::Mat &imagen);
+    static void callbackTeclado(GLFWwindow* ventana,
+                                int tecla,
+                                int scancode,
+                                int accion,
+                                int mods);
 };
 
-#endif
+#endif // VISUALIZADOR_H
