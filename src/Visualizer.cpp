@@ -139,28 +139,6 @@ void Visualizador::ejecutar()
         
         glfwSwapBuffers(ventana);
         glfwPollEvents();
-
-
-        // Dibujar texto con la predicción
-        if(!ultima_prediccion.empty()) {
-            // Configurar para dibujar texto
-            glMatrixMode(GL_PROJECTION);
-            glLoadIdentity();
-            glOrtho(0, ancho_ventana, alto_ventana, 0, -1, 1);
-            glMatrixMode(GL_MODELVIEW);
-            glLoadIdentity();
-            
-            glColor3f(1.0f, 0.0f, 0.0f); // Texto en rojo
-            glRasterPos2f(10, 30); // Posición (x,y)
-            
-            // Dibujar cada carácter (simplificado)
-            for(char c : ultima_prediccion) {
-                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
-            }
-        }
-        
-        glfwSwapBuffers(ventana);
-        glfwPollEvents();
     }
 }
 
