@@ -8,7 +8,7 @@
 
 class Visualizador {
 public:
-    Visualizador(int ancho = 640, int alto = 480);
+    Visualizador(int ancho=640, int alto=480);
     ~Visualizador();
     
     bool inicializarCamara();
