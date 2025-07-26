@@ -8,6 +8,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+#VISUALIZADOR
+set(VISUALIZER_SOURCE "app/visualizer.cpp")
+
+
 # --- Configuración de Tipos de Compilación y Flags ---
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build type: Debug, Release, RelWithDebInfo, MinSizeRel." FORCE)
@@ -50,11 +54,17 @@ add_executable(test ${TEST_SOURCE} ${SOURCES})
 # --- Creación del Ejecutable para el TestImage ---
 add_executable(testImage ${TEST_IMAGE_SOURCE} ${SOURCES})
 
+#VISUALIZADOR
+add_executable(visualizer ${VISUALIZER_SOURCE} src/Visualizer.cpp)
+
+
 # --- Enlace de Librerías ---
 if(OpenMP_FOUND)
     message(STATUS "OpenMP encontrado, enlazando...")
     target_link_libraries(${PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
     target_link_libraries(test PRIVATE OpenMP::OpenMP_CXX)  
+    #VISUALIZADOR
+    target_link_libraries(visualizer ${OpenCV_LIBS} ${OPENGL_LIBRARIES} glfw GLEW)
 else()
     message(WARNING "OpenMP no se encontró. La compilación continuará sin paralelización.")
 endif()
