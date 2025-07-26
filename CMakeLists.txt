@@ -27,6 +27,7 @@ find_package(OpenCV REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
 find_package(GLEW REQUIRED)
+find_package(GLUT REQUIRED)
 
 # --- Directorios de include ---
 include_directories(
@@ -66,6 +67,7 @@ foreach(target ${PROJECT_NAME} test testImage visualizer)
       ${OPENGL_gl_LIBRARY}
       glfw
       GLEW::GLEW
+      GLUT::GLUT
   )
 endforeach()
 

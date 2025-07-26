@@ -34,6 +34,8 @@ private:
     
     void cargarTextura(const cv::Mat& imagen);
     static void callbackTeclado(GLFWwindow* ventana, int tecla, int scancode, int accion, int mods);
+    
+    std::string ultima_prediccion; // Para almacenar el resultado
 };
 
 #endif

@@ -9,11 +9,11 @@ constexpr float DESV_EST=0.3081f;
 
 using namespace std;
 
-Visualizador::Visualizador(int ancho, int alto, const ViTConfig &cfg)
+Visualizador::Visualizador(int ancho,int alto,const ViTConfig &cfg)
     : ventana(nullptr),
       ancho_ventana(ancho),
       alto_ventana(alto),
-      modelo(cfg),               // construyendo el ViT con sus hiperparámetros
+      modelo(cfg),              // construyendo el ViT con sus hiperparámetros
       camara(0),
       textura_id(0)
  {}
@@ -102,11 +102,14 @@ Tensor Visualizador::capturarImagen() {
 
 Tensor Visualizador::predecir(const Tensor& entrada) {
     // isTraining=false para inferencia
-    return modelo.forward(entrada, /*isTraining=*/false);
+    return modelo.forward(entrada,/*isTraining=*/false);
 }
 
 void Visualizador::ejecutar() 
 {
+    // Guardar referencia al visualizador en la ventana
+    glfwSetWindowUserPointer(ventana, this);
+    
     while(!glfwWindowShouldClose(ventana)) 
     {
         // Capturar frame
@@ -136,13 +139,65 @@ void Visualizador::ejecutar()
         
         glfwSwapBuffers(ventana);
         glfwPollEvents();
+
+
+        // Dibujar texto con la predicción
+        if(!ultima_prediccion.empty()) {
+            // Configurar para dibujar texto
+            glMatrixMode(GL_PROJECTION);
+            glLoadIdentity();
+            glOrtho(0, ancho_ventana, alto_ventana, 0, -1, 1);
+            glMatrixMode(GL_MODELVIEW);
+            glLoadIdentity();
+            
+            glColor3f(1.0f, 0.0f, 0.0f); // Texto en rojo
+            glRasterPos2f(10, 30); // Posición (x,y)
+            
+            // Dibujar cada carácter (simplificado)
+            for(char c : ultima_prediccion) {
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
+            }
+        }
+        
+        glfwSwapBuffers(ventana);
+        glfwPollEvents();
     }
 }
 
 void Visualizador::callbackTeclado(GLFWwindow* ventana,int tecla,int scancode,int accion,int mods) 
 {
-    if(tecla == GLFW_KEY_ESCAPE && accion == GLFW_PRESS) 
-    {
+    Visualizador* vis = static_cast<Visualizador*>(glfwGetWindowUserPointer(ventana));
+    
+    if(tecla == GLFW_KEY_ESCAPE && accion == GLFW_PRESS) {
         glfwSetWindowShouldClose(ventana,GL_TRUE);
+    }
+    if(tecla == GLFW_KEY_SPACE && accion == GLFW_PRESS) {
+        try {
+            // 1. Capturar imagen
+            Tensor imagen = vis->capturarImagen();
+            
+            // 2. Predecir con el modelo
+            Tensor logits = vis->predecir(imagen);
+            
+            // 3. Convertir logits a clase predicha
+            const float* datos = logits.getData();
+            int clase = 0;
+            float max_val = datos[0];
+            for(int i = 1; i < 10; i++) {
+                if(datos[i] > max_val) {
+                    max_val = datos[i];
+                    clase = i;
+                }
+            }
+            vis->ultima_prediccion = "Prediccion: " + std::to_string(clase);
+            
+            // 4. Mostrar en consola
+            std::cout << ">>> " << vis->ultima_prediccion << " <<<" << std::endl;
+            
+            // 5. Actualizar título de ventana
+            glfwSetWindowTitle(ventana,("Vision Transformer - " + vis->ultima_prediccion).c_str());
+        } catch(const std::exception& e) {
+            std::cerr << "Error en predicción: " << e.what() << std::endl;
+        }
     }
 }
