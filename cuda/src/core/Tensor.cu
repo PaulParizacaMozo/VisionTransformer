@@ -501,14 +501,14 @@ Tensor Tensor::operator+(const Tensor &other) const
         if (shape_host_copy[i] != other.shape_host_copy[i])
             throw std::runtime_error("Shapes incompatibles para suma");
 
-    Tensor result(shape_host_copy, ndim);
+    Tensor resultplus(shape_host_copy, ndim);
     int threads = 256;
     int blocks = (totalSize + threads - 1) / threads;
     cudaGetLastError();
     addKernel<<<blocks, threads>>>(
         this->data,
         other.data,
-        result.data,
+        resultplus.data,
         this->dataOffset,
         other.dataOffset,
         totalSize);
@@ -518,7 +518,7 @@ Tensor Tensor::operator+(const Tensor &other) const
     if (err != cudaSuccess)
         throw std::runtime_error(std::string("CUDA kernel error: ") + cudaGetErrorString(err));
 
-    return result;
+    return resultplus;
 }
 
 __global__ void squareKernel(const float *input, float *output, size_t offset, size_t size)
@@ -682,7 +682,7 @@ void Tensor::printDebugInfo(const std::string &name) const
     for (size_t i = 0; i < ndim; ++i)
         std::cout << shape_host_copy[i] << (i + 1 < ndim ? ", " : "");
     std::cout << ")\n";
-
+    std::cout << "  data (device ptr): " << data << "\n";
     std::cout << "  Contiguo: " << (isContiguous() ? "Sí" : "NO") << "\n";
     std::cout << "  Offset: " << dataOffset << "\n";
     std::cout << "  totalSize: " << totalSize << "\n";
@@ -694,29 +694,11 @@ void Tensor::printDebugInfo(const std::string &name) const
     std::cout << "-------------------------\n";
 }
 
-__device__ inline float &Tensor::operator()(size_t i)
-{
-    return data[dataOffset + i * strides[0]];
-}
-
-__device__ inline float &Tensor::operator()(size_t i, size_t j)
-{
-    return data[dataOffset + i * strides[0] + j * strides[1]];
-}
-
-__device__ inline float &Tensor::operator()(size_t i, size_t j, size_t k)
-{
-    return data[dataOffset + i * strides[0] + j * strides[1] + k * strides[2]];
-}
-
-__device__ inline float &Tensor::operator()(size_t i, size_t j, size_t k, size_t l)
-{
-    return data[dataOffset + i * strides[0] + j * strides[1] + k * strides[2] + l * strides[3]];
-}
-
 // --- Funciones auxiliares GPU ---
 Tensor matrixMultiply(const Tensor &a, const Tensor &b)
 {
+    // a.printFirstElements("Tensor A");
+    // b.printFirstElements("Tensor B");
     // Validar dimensiones
     if (a.dims() != 2 || b.dims() != 2)
         throw std::runtime_error("matrixMultiply: solo se permite 2D");
@@ -749,6 +731,7 @@ Tensor matrixMultiply(const Tensor &a, const Tensor &b)
         &beta,
         result.getData(), n); // C: [m x n], ldc = n
 
+    // result.printFirstElements("Resultado de matrixMultiply");
     if (status != CUBLAS_STATUS_SUCCESS)
         throw std::runtime_error("matrixMultiply: error en cublasSgemm");
 
@@ -758,6 +741,8 @@ Tensor matrixMultiply(const Tensor &a, const Tensor &b)
 
 Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b)
 {
+    // a.printFirstElements("Tensor A");
+    // b.printFirstElements("Tensor B");
     if (a.dims() != 3 || b.dims() != 3)
         throw std::runtime_error("batchMatrixMultiply: solo soporta tensores 3D");
 
@@ -801,6 +786,7 @@ Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b)
         C, ldc, strideC,
         B);
 
+    // result.printFirstElements("Resultado de batchMatrixMultiply");
     if (status != CUBLAS_STATUS_SUCCESS)
         throw std::runtime_error("batchMatrixMultiply: error en cublasSgemmStridedBatched");
 

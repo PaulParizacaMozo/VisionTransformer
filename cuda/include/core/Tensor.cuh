@@ -6,6 +6,8 @@
 #include <iostream>
 #include <vector>
 #include <functional>
+#include <iomanip>
+#include <cstring>
 
 class Tensor
 {
@@ -41,6 +43,34 @@ public:
         return data_host;
     }
     bool isContiguous() const;
+    Tensor clone() const
+    {
+        Tensor result;
+
+        // Copiar metadatos
+        result.ndim = this->ndim;
+        result.totalSize = this->totalSize;
+        result.dataOffset = 0; // clon tiene offset 0
+
+        // --- Copiar shape y strides en CPU ---
+        result.shape_host_copy = new size_t[ndim];
+        result.strides_host_copy = new size_t[ndim];
+        std::memcpy(result.shape_host_copy, this->shape_host_copy, ndim * sizeof(size_t));
+        std::memcpy(result.strides_host_copy, this->strides_host_copy, ndim * sizeof(size_t));
+
+        // --- Copiar shape y strides a GPU ---
+        cudaMalloc(&result.shape, ndim * sizeof(size_t));
+        cudaMemcpy(result.shape, this->shape, ndim * sizeof(size_t), cudaMemcpyDeviceToDevice);
+
+        cudaMalloc(&result.strides, ndim * sizeof(size_t));
+        cudaMemcpy(result.strides, this->strides, ndim * sizeof(size_t), cudaMemcpyDeviceToDevice);
+
+        // --- Copiar los datos en GPU ---
+        cudaMalloc(&result.data, totalSize * sizeof(float));
+        cudaMemcpy(result.data, this->data + dataOffset, totalSize * sizeof(float), cudaMemcpyDeviceToDevice);
+
+        return result;
+    }
 
     // --- Constructores y Destructor ---
     Tensor();
@@ -82,6 +112,58 @@ public:
 
     // --- Debug info opcional ---
     void printDebugInfo(const std::string &name = "") const;
+    void printFirstElements(const std::string &name, size_t max_elements = 10) const
+    {
+        std::vector<float> host_data(totalSize);
+        cudaMemcpy(host_data.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+
+        std::vector<size_t> host_shape(ndim);
+        cudaMemcpy(host_shape.data(), shape, ndim * sizeof(size_t), cudaMemcpyDeviceToHost);
+
+        std::cout << "--- " << name << " - " << data << " (shape: [";
+        for (size_t i = 0; i < ndim; ++i)
+        {
+            std::cout << host_shape[i];
+            if (i < ndim - 1)
+                std::cout << ", ";
+        }
+        std::cout << "]) ---\n";
+
+        if (!isContiguous())
+            std::cout << "⚠️  Advertencia: Tensor no contiguo en memoria (strides no estándar).\n";
+
+        // Imprimir solo la primera fila/plano (según dimensionalidad)
+        size_t first_offset = 0;
+        size_t print_count = std::min(max_elements, host_shape.back());
+
+        if (ndim == 1)
+        {
+            std::cout << "[";
+            std::cout << std::fixed << std::setprecision(8); // Añade esta línea
+            for (size_t i = 0; i < print_count; ++i)
+            {
+                std::cout << host_data[i];
+                if (i < print_count - 1)
+                    std::cout << ", ";
+            }
+            std::cout << "]\n";
+        }
+        else if (ndim >= 2)
+        {
+            std::cout << "[";
+            std::cout << std::fixed << std::setprecision(8); // Añade esta línea
+            for (size_t i = 0; i < print_count; ++i)
+            {
+                std::cout << host_data[i];
+                if (i < print_count - 1)
+                    std::cout << ", ";
+            }
+            std::cout << "] (mostrando solo la primera fila)\n";
+        }
+
+        std::cout << std::endl;
+    }
+
     void printContents(const std::string &name) const
     {
         std::vector<float> host_data(totalSize);
@@ -263,11 +345,6 @@ public:
 
         std::cout << "\n";
     }
-
-    __device__ inline float &operator()(size_t i);
-    __device__ inline float &operator()(size_t i, size_t j);
-    __device__ inline float &operator()(size_t i, size_t j, size_t k);
-    __device__ inline float &operator()(size_t i, size_t j, size_t k, size_t l);
 };
 
 // --- Funciones auxiliares GPU ---

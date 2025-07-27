@@ -10,7 +10,7 @@ VisionTransformer::VisionTransformer(const ViTConfig &config)
   this->num_tokens = 1 + (config.image_size / config.patch_size) * (config.image_size / config.patch_size);
 
   for (size_t i = 0; i < config.num_layers; ++i) {
-    encoder_blocks.emplace_back(config.embedding_dim, config.num_heads, config.mlp_hidden_dim);
+    encoder_blocks.emplace_back(config.embedding_dim, config.num_heads, config.mlp_hidden_dim, config.dropout_rate);
   }
 }
 

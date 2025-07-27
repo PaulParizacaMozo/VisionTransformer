@@ -13,12 +13,15 @@ VisionTransformer::VisionTransformer(const ViTConfig &config)
 
 Tensor VisionTransformer::forward(const Tensor &input, bool isTraining)
 {
+    std::cout << "VIT: paso 1 - Embeddings" << std::endl;
     Tensor x = embeddings.forward(input, isTraining);
 
+    std::cout << "VIT: paso 2 - Añadir token CLS" << std::endl;
     for (auto &block : encoder_blocks)
     {
         x = block.forward(x, isTraining);
     }
+    std::cout << "VIT: paso 3 - Normalización final" << std::endl;
 
     x = final_norm.forward(x, isTraining);
 
@@ -32,7 +35,7 @@ Tensor VisionTransformer::forward(const Tensor &input, bool isTraining)
     Tensor x2 = x1.contiguous();  // Copia los datos a memoria continua, elimina views
     size_t new_shape_host[2] = {input.dim(0), config.embedding_dim};
     Tensor cls_token = x2.reshape(new_shape_host, 2);
-
+    std::cout << "VIT: paso 4 - Token CLS extraído" << std::endl;
     return mlp_head.forward(cls_token, isTraining);
 }
 
@@ -55,7 +58,7 @@ __global__ void insertCLSGradKernel(const float *grad, float *grad_seq,
 Tensor VisionTransformer::backward(const Tensor &outputGradient)
 {
     Tensor grad = mlp_head.backward(outputGradient);
-    // grad.printContents("Gradiente de la cabeza MLP");
+    grad.printFirstElements("VIT::Gradiente de la cabeza MLP");
     size_t batchSize = outputGradient.dim(0);
     size_t embDim = config.embedding_dim;
     size_t numTokens = this->num_tokens;
@@ -63,7 +66,7 @@ Tensor VisionTransformer::backward(const Tensor &outputGradient)
     // Crear tensor de gradientes con ceros para toda la secuencia
     Tensor grad_seq({batchSize, numTokens, embDim});
     grad_seq.fill(0.0f);
-    // grad_seq.printContents("Gradiente secuencia inicial");
+    grad_seq.printFirstElements("VIT::Gradiente secuencia inicial");
 
     // --- Transferencia del gradiente del token CLS a la posición [b, 0, d] ---
     dim3 blockSize(128);
@@ -79,19 +82,19 @@ Tensor VisionTransformer::backward(const Tensor &outputGradient)
         printf("[CUDA ERROR - scaleKernel (backward)] %s\n", cudaGetErrorString(err));
         throw std::runtime_error("MultiHeadAttention::backward: error al aplicar escalamiento inverso");
     }
-    // grad_seq.printContents("Gradiente secuencia después de transferir CLS");
+    grad_seq.printFirstElements("VIT::Gradiente secuencia después de transferir CLS");
 
     // --- Backward ---
     grad = final_norm.backward(grad_seq);
-    // grad.printContents("Gradiente después de LayerNorm final");
+    grad.printFirstElements("VIT::Gradiente después de LayerNorm final");
 
     for (int i = static_cast<int>(encoder_blocks.size()) - 1; i >= 0; --i)
     {
         grad = encoder_blocks[i].backward(grad);
-        // grad.printContents("Gradiente después de bloque encoder " + std::to_string(i));
+        grad.printFirstElements("VIT::Gradiente después de bloque encoder " + std::to_string(i));
     }
     grad = embeddings.backward(grad);
-    // grad.printContents("Gradiente después de Embeddings");
+    grad.printFirstElements("VIT::Gradiente después de Embeddings");
     return grad;
 }
 

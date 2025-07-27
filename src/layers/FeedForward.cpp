@@ -3,10 +3,11 @@
 /**
  * @brief Constructor que inicializa las sub-capas.
  */
-FeedForward::FeedForward(size_t embedding_dim, size_t hidden_dim)
+FeedForward::FeedForward(size_t embedding_dim, size_t hidden_dim, float dropout_rate)
     : dense1(embedding_dim, hidden_dim), // Entrada: D, Salida: H
       activation(),                      // Sin parámetros
-      dense2(hidden_dim, embedding_dim)  // Entrada: H, Salida: D
+      dense2(hidden_dim, embedding_dim),  // Entrada: H, Salida: D
+      dropout(dropout_rate)
 {
   // El cuerpo del constructor está vacío; la inicialización se hace en la lista de inicializadores.
 }
@@ -18,6 +19,7 @@ Tensor FeedForward::forward(const Tensor &input, bool isTraining) {
   Tensor x = dense1.forward(input, isTraining);
   x = activation.forward(x, isTraining);
   x = dense2.forward(x, isTraining);
+  x = dropout.forward(x, isTraining); 
   return x;
 }
 
@@ -25,7 +27,8 @@ Tensor FeedForward::forward(const Tensor &input, bool isTraining) {
  * @brief Encadena el backward pass de las sub-capas en orden inverso.
  */
 Tensor FeedForward::backward(const Tensor &outputGradient) {
-  Tensor grad = dense2.backward(outputGradient);
+  Tensor grad = dropout.backward(outputGradient);
+  grad = dense2.backward(outputGradient);
   grad = activation.backward(grad);
   grad = dense1.backward(grad);
   return grad;

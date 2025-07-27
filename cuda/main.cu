@@ -945,12 +945,12 @@ void TestTrainer()
 
     TrainerConfig train_config;
     train_config.epochs = 10;
-    train_config.batch_size = 64;
+    train_config.batch_size = 256;
     train_config.learning_rate = 0.0001f;
 
     // --- 2. Cargar Datos ---
     std::cout << "--- Cargando Datos de Fashion MNIST ---" << std::endl;
-    auto train_data = load_csv_data("../data/mnist_train.csv", 0.01f);
+    auto train_data = load_csv_data("../data/mnist_train.csv", 0.5f);
     auto test_data = load_csv_data("../data/mnist_test.csv", 1.0f);
 
     // --- 3. Crear Modelo y Entrenador ---

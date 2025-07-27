@@ -56,15 +56,54 @@ build_project() {
 
 run_app() {
   echo "--- Ejecutando la aplicación '${PROJECT_NAME}' ---"
-  ./${BUILD_DIR}/bin/${PROJECT_NAME}
+  ./${BUILD_DIR}/${PROJECT_NAME}
   echo "--- Ejecución finalizada ---"
+}
+
+run_test() {
+  echo "--- Ejecutando pruebas sobre el conjunto de test ---"
+  ./${BUILD_DIR}/test # Ejecutamos el test de predicción
+  echo "--- Pruebas finalizadas ---"
+}
+
+run_image() {
+  local image_path="$1"
+  echo "--- Ejecutando testImage con imagen '${image_path}' ---"
+  ./${BUILD_DIR}/testImage "${image_path}"
+  echo "--- Predicción completada ---"
+}
+
+run_label() {
+  local image_path="$1"
+  echo "--- Ejecutando testLabel con imagen '${image_path}' ---"
+  ./${BUILD_DIR}/testLabel "${image_path}"
+  echo "--- Predicción completada ---"
 }
 
 # --- Flujo Principal ---
 echo "Iniciando flujo: Compilar y Ejecutar"
 echo "Proyecto: ${PROJECT_NAME}, Tipo de Compilación: ${BUILD_TYPE}"
 
-build_project
-run_app
+# Comprobar si se debe ejecutar un test
+if [ "$1" == "test" ]; then
+  build_project
+  run_test
+elif [ "$1" == "image" ]; then
+  build_project
+  run_image "$2"
+elif [ "$1" == "label" ]; then
+  build_project
+  run_label "$2"
+elif [ "$1" == "visualizer" ]; then
+  # solo si se tiene opencv instalado
+  # cd app
+  # g++ realTime.cpp -o realTime `pkg-config --cflags --libs opencv4` 
+  # cd ..
+  ./app/realTime
+else
+  build_project
+  run_app
+fi
 
 exit 0
+

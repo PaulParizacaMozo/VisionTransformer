@@ -73,8 +73,7 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
     if (isTraining)
         this->inputTensor.deepCopyFrom(input);
     // c1.printContents("MultiHeadAttention::forward - Input c1");
-    const size_t *s = input.getShapeHost(); // {B, N, D}
-    size_t B = s[0], N = s[1];
+    size_t B = input.dim(0), N = input.dim(1);
 
     // std::cout << ">> MultiHeadAttention: Paso 1" << std::endl;
     // 1. Proyecciones lineales
@@ -142,9 +141,13 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
 
         this->q_split.deepCopyFrom(q_copy6);
         this->k_split.deepCopyFrom(k_copy6);
-        this->v_split.deepCopyFrom(v_copy6);
+        v_copy6.printFirstElements("MHA::FORWARD v_copy6 [B*h,N,d_h] antes de copiar");
+        this->v_split = v_copy6.clone();
+        v_split2 = v_copy6.clone();
+        v_split.printFirstElements("MHA::FORWARD v_split [B*h,N,d_h] después de copiar");
+        v_split2.printFirstElements("MHA::FORWARD v_split2 [B*h,N,d_h] después de copiar");
 
-        // std::cout << "Dirección de v_split después de copiar: " << this->v_split.getData() << std::endl;
+        std::cout << "Dirección de v_split después de copiar: " << this->v_split.getData() << std::endl;
     }
 
     // q.printContents("Q final [B*h,N,d_h]");
@@ -178,6 +181,10 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
     Tensor out = out_proj->forward(context, isTraining);
     // out.printContents("Output final MultiHeadAttention");
 
+    // v_split.printFirstElements("MHA::FORWARD v_split [B*h,N,d_h] después de copiar");
+    // v_split2.printFirstElements("MHA::FORWARD v_split2 [B*h,N,d_h] después de copiar");
+
+    // std::cout << "Dirección de v_split después de copiar: " << this->v_split.getData() << std::endl;
     return out;
 }
 
@@ -187,53 +194,58 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient)
     size_t B = inputTensor.dim(0);
     size_t N = inputTensor.dim(1);
 
-    // std::cout << ">> MultiHeadAttention: Paso 1" << std::endl;
-    // std::cout << "Batch size: " << B << ", Sequence length: " << N << std::endl;
+    std::cout << ">> MultiHeadAttention: Paso 1" << std::endl;
+    std::cout << "Batch size: " << B << ", Sequence length: " << N << std::endl;
 
-    // std::cout << "v_split antes del backward: " << v_split.getData() << std::endl;
-    // v_split.printContents("v_split antes del backward");
+    std::cout << "v_split antes del backward: " << v_split.getData() << std::endl;
+    v_split.printDebugInfo("v_split antes del backward");
+    v_split.printFirstElements("v_split antes del backward");
+    v_split2.printDebugInfo("v_split2 antes del backward");
+    v_split2.printFirstElements("v_split2 antes del backward");
     Tensor grad = this->out_proj->backward(outputGradient);
     // std::cout << "v_split después del backward: " << v_split.getData() << std::endl;
 
-    // grad.printContents("Gradiente después de out_proj");
+    grad.printFirstElements("MHA::Gradiente después de out_proj");
 
     size_t s1[4] = {B, N, this->num_heads, this->head_dim};
     grad = grad.reshape(s1, 4);
-    // grad.printDebugInfo("Gradiente después de reshape a [B, N, h, d_h]");
-    // grad.printContents("Gradiente después de reshape a [B, N, h, d_h]");
+    grad.printDebugInfo("MHA::Gradiente después de reshape a [B, N, h, d_h]");
+    grad.printFirstElements("MHA::Gradiente después de reshape a [B, N, h, d_h]");
     Tensor grad_t(grad);
     grad = grad_t.transpose(1, 2);
-    // grad.printDebugInfo("Gradiente después de transponer a [B, h, N, d_h]");
-    // grad.printContents("Gradiente después de transponer a [B, h, N, d_h]");
+    grad.printDebugInfo("MHA::Gradiente después de transponer a [B, h, N, d_h]");
+    grad.printFirstElements("MHA::Gradiente después de transponer a [B, h, N, d_h]");
     grad = grad.contiguous();
-    // grad.printContents("Gradiente después de hacer contiguo");
+    grad.printFirstElements("MHA::Gradiente después de hacer contiguo");
 
     size_t s2[3] = {B * this->num_heads, N, this->head_dim};
     grad = grad.reshape(s2, 3);
     // std::cout << "Dirección de grad en backward: " << grad.getData() << std::endl;
     // std::cout << "Dirección de v_split: " << this->v_split.getData() << std::endl;
 
-    // grad.printContents("Gradiente después de unificar batch y heads a [B*h, N, d_h]");
-    // v_split.printContents("v_split [B*h, N, d_h]");
+    grad.printDebugInfo("MHA::Gradiente después de unificar batch y heads a [B*h, N, d_h]");
+    grad.printFirstElements("MHA::Gradiente después de unificar batch y heads a [B*h, N, d_h]");
+    v_split2.printDebugInfo("MHA::v_split2 [B*h, N, d_h] antes de usar en backward");
+    v_split2.printFirstElements("MHA::v_split2 [B*h, N, d_h]");
 
-    Tensor V_T = this->v_split.transpose(1, 2);
-    // V_T.printContents("V_T [B*h, d_h, N]");
+    Tensor V_T = this->v_split2.transpose(1, 2);
+    V_T.printFirstElements("MHA::V_T [B*h, d_h, N]");
 
-    Tensor d_attention_weights = batchMatrixMultiply(grad, V_T);
-    // d_attention_weights.printContents("d_attention_weights [B*h, N, N]");
+    Tensor d_attention_weights = batchMatrixMultiply(grad, V_T);                    // resuolt 0's
+    d_attention_weights.printFirstElements("MHA::d_attention_weights [B*h, N, N]"); // 0's
 
     Tensor attention_weights_T = this->attention_weights.transpose(1, 2);
-    // attention_weights_T.printContents("attention_weights_T [B*h, N, N]");
-    Tensor dV = batchMatrixMultiply(attention_weights_T, grad);
-    // dV.printContents("dV [B*h, N, d_h]");
+    attention_weights_T.printFirstElements("MHA::attention_weights_T [B*h, N, N]");
+    Tensor dV = batchMatrixMultiply(attention_weights_T, grad); // result 0's
+    dV.printFirstElements("MHA::dV [B*h, N, d_h]");
 
     Tensor d_scores = softmax_backward(d_attention_weights, this->attention_weights);
-    // d_scores.printContents("d_scores [B*h, N, N]");
+    d_scores.printFirstElements("MHA::d_scores [B*h, N, N]"); // 0's
 
     float scale_factor = 1.0f / std::sqrt(static_cast<float>(this->head_dim));
-    // d_scores.printDebugInfo("d_scores antes de aplicar escalamiento inverso");
+    d_scores.printDebugInfo("MHA::d_scores antes de aplicar escalamiento inverso");
     Tensor contiguous_scores = d_scores.isContiguous() ? d_scores : d_scores.contiguous();
-    // contiguous_scores.printContents("Contiguous scores para escalamiento inverso");
+    contiguous_scores.printFirstElements("MHA::Contiguous scores para escalamiento inverso"); // 0's
 
     float *scores_data = contiguous_scores.getData();
     size_t totalSize = contiguous_scores.size();
@@ -249,13 +261,14 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient)
         printf("[CUDA ERROR - scaleKernel (backward)] %s\n", cudaGetErrorString(err));
         throw std::runtime_error("MultiHeadAttention::backward: error al aplicar escalamiento inverso");
     }
-
-    Tensor dQ = batchMatrixMultiply(contiguous_scores, this->k_split);
-    // dQ.printContents("dQ [B*h, N, d_h]");
+    contiguous_scores.printDebugInfo("MHA::d_scores después de aplicar escalamiento inverso");     // 0's
+    contiguous_scores.printFirstElements("MHA::d_scores después de aplicar escalamiento inverso"); // 0's
+    Tensor dQ = batchMatrixMultiply(contiguous_scores, this->k_split);                             // contiguos 0's
+    dQ.printFirstElements("MHA::dQ [B*h, N, d_h]");
     Tensor Q_T = this->q_split.transpose(1, 2);
-    // Q_T.printContents("Q_T [B*h, d_h, N]");
+    Q_T.printFirstElements("MHA::Q_T [B*h, d_h, N]");
     Tensor dK = batchMatrixMultiply(Q_T, contiguous_scores);
-    // dK.printContents("dK [B*h, N, d_h]");
+    dK.printFirstElements("MHA::dK [B*h, N, d_h]");
 
     auto reassemble_grads = [&](Tensor &g)
     {
@@ -268,22 +281,22 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient)
     };
 
     dQ = reassemble_grads(dQ);
-    // dQ.printContents("dQ reensamblado [B, N, D]");
+    dQ.printFirstElements("MHA::dQ reensamblado [B, N, D]");
 
     dK = reassemble_grads(dK);
-    // dK.printContents("dK reensamblado [B, N, D]");
+    dK.printFirstElements("MHA::dK reensamblado [B, N, D]");
     dV = reassemble_grads(dV);
-    // dV.printContents("dV reensamblado [B, N, D]");
+    dV.printFirstElements("MHA::dV reensamblado [B, N, D]");
 
     Tensor dInput_q = this->q_proj->backward(dQ);
     Tensor dInput_k = this->k_proj->backward(dK);
     Tensor dInput_v = this->v_proj->backward(dV);
 
-    // dInput_q.printContents("dInput_q [B, N, D]");
-    // dInput_k.printContents("dInput_k [B, N, D]");
-    // dInput_v.printContents("dInput_v [B, N, D]");
+    dInput_q.printFirstElements("MHA::dInput_q [B, N, D]");
+    dInput_k.printFirstElements("MHA::dInput_k [B, N, D]");
+    dInput_v.printFirstElements("MHA::dInput_v [B, N, D]");
     Tensor final_grad = dInput_q + dInput_k + dInput_v;
-    // final_grad.printContents("Gradiente final [B, N, D]");
+    final_grad.printFirstElements("MHA::Gradiente final [B, N, D]");
     return final_grad;
 }
 

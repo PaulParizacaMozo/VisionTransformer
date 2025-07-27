@@ -87,11 +87,9 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
 
         auto [test_loss, test_acc] = evaluate(X_test, y_test);
 
-        std::cout << "--- Época " << epoch + 1 << "/" << config.epochs
-                  << " | Train Loss: " << std::fixed << std::setprecision(4) << train_loss
-                  << " | Train Acc: " << train_acc
-                  << " | Test Loss: " << test_loss
-                  << " | Test Acc: " << test_acc
+        std::cout << "--- Época " << epoch + 1 << "/" << config.epochs << std::fixed << std::setprecision(4)
+                  << " | Train Loss: " << train_loss << " | Train Acc: " << train_acc
+                  << " | Test Loss: " << test_loss << " | Test Acc: " << test_acc
                   << std::endl;
     }
 }
@@ -131,7 +129,7 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
     std::srand(static_cast<unsigned int>(std::time(nullptr) + config.epochs));
     std::random_shuffle(indices.begin(), indices.end());
 
-    for (size_t i = 0; i < num_batches; ++i)
+    for (size_t i = 0; i < 1; ++i)
     {
         size_t start_idx_in_indices = i * config.batch_size;
         size_t count = std::min(config.batch_size, num_train_samples - start_idx_in_indices);
@@ -169,21 +167,26 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
 
         // --- Ciclo de entrenamiento para el batch ---
         Tensor logits = model.forward(X_batch, true);
-        logits.printContents("Logits del batch");
+        logits.printFirstElements("Logits del batch");
         total_loss += loss_fn.calculate(logits, y_batch);
-        logits.printContents("Logits del batch tras calcular pérdida");
+        logits.printFirstElements("Logits del batch tras calcular pérdida");
         total_accuracy += calculate_accuracy(logits, y_batch);
-        logits.printContents("Logits del batch tras calcular precisión");
+        logits.printFirstElements("Logits del batch tras calcular precisión");
 
         Tensor grad = loss_fn.backward(logits, y_batch);
-        grad.printContents("Gradiente tras backward");
+        grad.printFirstElements("Gradiente tras backward");
         model.backward(grad);
 
         auto params = model.getParameters();
+
         auto grads = model.getGradients();
         optimizer.update(params, grads);
 
-        std::cout << "\rEntrenando... Batch " << i + 1 << "/" << num_batches << " " << std::flush;
+        std::cout << "\rEntrenando... Batch " << i + 1 << "/" << num_batches << " Loss: "
+                  << std::fixed << std::setprecision(4) << total_loss / (i + 1)
+                  << " Acc: " << std::fixed << std::setprecision(4) << total_accuracy / (i + 1)
+                  << " (" << (i + 1) * config.batch_size << "/" << num_train_samples << ")"
+                  << std::flush;
     }
 
     return {total_loss / num_batches, total_accuracy / num_batches};
@@ -203,7 +206,7 @@ std::pair<float, float> Trainer::evaluate(const Tensor &X_test, const Tensor &y_
     size_t num_classes = y_test.dim(1);
     size_t image_size = height * width;
 
-    for (size_t i = 0; i < num_batches; ++i)
+    for (size_t i = 0; i < 1; ++i)
     {
         size_t start = i * config.batch_size;
         size_t count = std::min(config.batch_size, num_test_samples - start);
@@ -212,9 +215,12 @@ std::pair<float, float> Trainer::evaluate(const Tensor &X_test, const Tensor &y_
 
         Tensor X_batch = X_test.slice(0, start, count);
         Tensor y_batch = y_test.slice(0, start, count);
+        // X_batch.printContents("X_batch en evaluate");
+        // y_batch.printContents("y_batch en evaluate");
 
         // Forward pass en modo inferencia
         Tensor logits = model.forward(X_batch, false);
+        // logits.printFirstElements("Logits del batch en evaluate");
 
         // Calcular pérdida y precisión para el batch
         total_loss += loss_fn.calculate(logits, y_batch);

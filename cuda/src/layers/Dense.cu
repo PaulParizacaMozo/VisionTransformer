@@ -62,7 +62,7 @@ Tensor Dense::forward(const Tensor &input, bool isTraining)
 
 Tensor Dense::backward(const Tensor &outputGradient)
 {
-    // outputGradient.printContents("Dense::backward - Output Gradient");
+    outputGradient.printFirstElements("Dense::backward - Output Gradient");
     size_t rank = this->inputTensor.dims();
     Tensor input = this->inputTensor;
     Tensor dout = outputGradient;

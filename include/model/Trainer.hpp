@@ -5,6 +5,7 @@
 #include "model/VisionTransformer.hpp"
 #include "optimizers/Adam.hpp"  // O una interfaz Optimizer si tienes más
 #include "utils/DataReader.hpp" // Para recibir los datos
+#include "utils/Logger.hpp"
 #include <memory>
 #include <vector>
 
@@ -13,6 +14,9 @@ struct TrainerConfig {
   size_t batch_size = 64;
   float learning_rate = 0.001f;
   float weight_decay = 0.01f;
+
+  float lr_init       = 3e-4f;  // LR máx después del warm‑up
+  float warmup_frac   = 0.1f;   // 10 % de pasos totales
 };
 
 class Trainer {
@@ -34,7 +38,7 @@ private:
    * @brief Ejecuta una única época de entrenamiento.
    * @return Par {pérdida_promedio, precisión_promedio} de la época.
    */
-  std::pair<float, float> train_epoch(const Tensor &X_train, const Tensor &y_train);
+  std::pair<float, float> train_epoch(const Tensor &X_train, const Tensor &y_train, int epoch);
 
   /**
    * @brief Evalúa el modelo en un conjunto de datos.
@@ -49,6 +53,12 @@ private:
 
   // Configuración
   TrainerConfig config;
+
+  // Logs
+  Logger logger;  // Añade esta línea
+
+  long long global_step   = 0;
+  long long total_steps   = 0;  // se define al empezar train()
 };
 
 #endif // TRAINER_HPP

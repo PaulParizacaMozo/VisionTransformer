@@ -51,6 +51,9 @@ public:
   void addBroadcast(const Tensor &other);
   Tensor contiguous() const; // AÑADIDO
 
+  Tensor expand(const std::vector<size_t>& newShape) const;
+  void copyFrom(const Tensor& src);
+
   // --- Operadores Aritméticos ---
   Tensor operator+(const Tensor &other) const;
 
@@ -69,6 +72,8 @@ public:
   float *getData();
   std::string shapeToString() const;
   bool isContiguous() const;
+  // --- Operaciones y Vistas ---
+  Tensor clone() const;  // Añade esta línea junto a los otros métodos como slice(), reshape(), etc.
 
   // depuracion
   void printDebugInfo(const std::string &name) const; // NUEVA

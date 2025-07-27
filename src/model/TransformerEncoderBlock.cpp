@@ -3,8 +3,8 @@
 /**
  * @brief Constructor que inicializa todas las sub-capas del bloque.
  */
-TransformerEncoderBlock::TransformerEncoderBlock(size_t embedding_dim, size_t num_heads, size_t mlp_hidden_dim)
-    : norm1(embedding_dim), attention(embedding_dim, num_heads), norm2(embedding_dim), ffn(embedding_dim, mlp_hidden_dim) {
+TransformerEncoderBlock::TransformerEncoderBlock(size_t embedding_dim, size_t num_heads, size_t mlp_hidden_dim, float dropout_rate)
+    : norm1(embedding_dim), attention(embedding_dim, num_heads), attention_dropout(dropout_rate), norm2(embedding_dim), ffn(embedding_dim, mlp_hidden_dim, dropout_rate) {
   // El cuerpo del constructor está vacío.
 }
 
@@ -20,6 +20,7 @@ Tensor TransformerEncoderBlock::forward(const Tensor &input, bool isTraining) {
   // Sub-capa 1: Multi-Head Attention
   Tensor x = norm1.forward(input, isTraining);
   x = attention.forward(x, isTraining);
+  x = attention_dropout.forward(x, isTraining);
   Tensor residual1 = input + x;
 
   if (isTraining) {
@@ -54,6 +55,7 @@ Tensor TransformerEncoderBlock::backward(const Tensor &outputGradient) {
   Tensor grad_skip1 = grad1;
 
   Tensor grad_mha = grad1;
+  grad_mha = attention_dropout.backward(grad_mha);
   grad_mha = attention.backward(grad_mha);
   grad_mha = norm1.backward(grad_mha);
 

@@ -6,14 +6,14 @@ TransformerEncoderBlock::TransformerEncoderBlock(size_t embedding_dim, size_t nu
 Tensor TransformerEncoderBlock::forward(const Tensor &input, bool isTraining)
 {
     if (isTraining)
-        input_skip1 = input;
+        input_skip1.deepCopyFrom(input);
 
     Tensor x = norm1.forward(input, isTraining);
     x = attention.forward(x, isTraining);
     Tensor residual1 = input + x;
 
     if (isTraining)
-        input_skip2 = residual1;
+        input_skip2.deepCopyFrom(residual1);
 
     Tensor y = norm2.forward(residual1, isTraining);
     y = ffn.forward(y, isTraining);
@@ -22,17 +22,25 @@ Tensor TransformerEncoderBlock::forward(const Tensor &input, bool isTraining)
 
 Tensor TransformerEncoderBlock::backward(const Tensor &outputGradient)
 {
-    Tensor grad_skip2 = outputGradient;
-
-    Tensor grad_ffn = ffn.backward(outputGradient);
+    Tensor grad_skip2 = outputGradient.clone();
+    grad_skip2.printFirstElements("Gradiente skip2 en TransformerEncoderBlock");
+    Tensor grad_ffn = outputGradient.clone();
+    grad_ffn.printFirstElements("Gradiente antes de FFN en TransformerEncoderBlock");
+    grad_ffn = ffn.backward(grad_ffn);
+    grad_ffn.printFirstElements("Gradiente FFN en TransformerEncoderBlock");
     grad_ffn = norm2.backward(grad_ffn);
+    grad_ffn.printFirstElements("Gradiente tras backward de norm2 en TransformerEncoderBlock");
 
     Tensor grad1 = grad_skip2 + grad_ffn;
-
-    Tensor grad_mha = attention.backward(grad1);
+    grad1.printFirstElements("Gradiente tras sumar skip2 y FFN en TransformerEncoderBlock");
+    grad1.printDebugInfo("Gradiente tras sumar skip2 y FFN  en TransformerEncoderBlock");
+    Tensor grad_skip1 = grad1.clone();
+    Tensor grad_mha = grad1.clone();
+    grad_mha = attention.backward(grad_mha);
+    grad_mha.printFirstElements("Gradiente MHA en TransformerEncoderBlock");
     grad_mha = norm1.backward(grad_mha);
-
-    return grad1 + grad_mha;
+    grad_mha.printFirstElements("Gradiente tras backward de norm1 en TransformerEncoderBlock");
+    return grad_skip1 + grad_mha;
 }
 
 std::vector<Tensor *> TransformerEncoderBlock::getParameters()

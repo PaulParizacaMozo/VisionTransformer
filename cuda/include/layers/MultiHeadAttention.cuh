@@ -27,6 +27,7 @@ private:
     Tensor q_split;
     Tensor k_split;
     Tensor v_split;
+    Tensor v_split2;
     Tensor attention_weights; // Los pesos de softmax
 public:
     MultiHeadAttention(size_t embedding_dim, size_t num_heads);
