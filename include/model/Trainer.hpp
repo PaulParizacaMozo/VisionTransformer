@@ -5,6 +5,7 @@
 #include "model/VisionTransformer.hpp"
 #include "optimizers/Adam.hpp"  // O una interfaz Optimizer si tienes más
 #include "utils/DataReader.hpp" // Para recibir los datos
+#include "utils/Logger.hpp"
 #include <memory>
 #include <vector>
 
@@ -52,6 +53,9 @@ private:
 
   // Configuración
   TrainerConfig config;
+
+  // Logs
+  Logger logger;  // Añade esta línea
 
   long long global_step   = 0;
   long long total_steps   = 0;  // se define al empezar train()

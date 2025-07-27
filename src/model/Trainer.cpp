@@ -52,10 +52,14 @@ float calculate_accuracy(const Tensor &logits, const Tensor &labels) {
  */
 Trainer::Trainer(VisionTransformer &model, const TrainerConfig &train_config)
     : model(model), // <-- Guarda la referencia
-      optimizer(train_config.learning_rate, 0.9f, 0.999f, 1e-8f, train_config.weight_decay), loss_fn(), config(train_config) {
-} /**
-   * @brief Orquesta el proceso de entrenamiento completo a lo largo de varias épocas.
-   */
+      optimizer(train_config.learning_rate, 0.9f, 0.999f, 1e-8f, train_config.weight_decay), 
+      loss_fn(), 
+      config(train_config), logger("vit_results.csv") {
+}
+
+/**
+ * @brief Orquesta el proceso de entrenamiento completo a lo largo de varias épocas.
+ */
 void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair<Tensor, Tensor> &test_data) {
   const auto &[X_train, y_train] = train_data;
   const auto &[X_test, y_test] = test_data;
@@ -76,6 +80,9 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
 
     // Evaluar en el conjunto de test para obtener sus métricas
     auto [test_loss, test_acc] = evaluate(X_test, y_test);
+
+    // Registrar en el logger
+    logger.log_epoch(epoch, config.epochs, train_loss, train_acc, test_loss, test_acc);
 
     // Imprimir el resumen de la época en el formato solicitado
     std::cout << "--- Época " << epoch + 1 << "/" << config.epochs << " | Train Loss: " << std::fixed << std::setprecision(4)
@@ -151,7 +158,7 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
       }
     }
 
-    // Aplicar data augmentation al batch completo (¡eficiente!)
+    // Aplicar data augmentation al batch completo
     Tensor X_batch_augmented = augmentor.apply(X_batch);
     // Usar X_batch_augmented en lugar de X_batch
     Tensor logits = model.forward(X_batch_augmented, true);
