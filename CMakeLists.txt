@@ -41,6 +41,7 @@ set(MAIN_SOURCE "app/main.cpp")
 set(TEST_SOURCE "app/test.cpp")
 set(TEST_IMAGE_SOURCE "app/testImage.cpp")
 set(TEST_LABEL_SOURCE "app/testLabel.cpp")
+set(TL_SOURCE "app/tl.cpp")
 
 # --- Creación del Ejecutable ---
 add_executable(${PROJECT_NAME} ${MAIN_SOURCE} ${SOURCES})
@@ -53,6 +54,9 @@ add_executable(testImage ${TEST_IMAGE_SOURCE} ${SOURCES})
 
 # --- Creación del Ejecutable para el TestLabel ---
 add_executable(testLabel ${TEST_LABEL_SOURCE} ${SOURCES})
+
+# --- Creación del Ejecutable para el TL ---
+add_executable(tl ${TL_SOURCE} ${SOURCES}) 
 
 # --- Enlace de Librerías ---
 if(OpenMP_FOUND)
