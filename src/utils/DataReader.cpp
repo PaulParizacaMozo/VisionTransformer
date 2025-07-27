@@ -33,6 +33,7 @@ std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
                                         size_t channels,
                                         size_t height,
                                         size_t width,
+                                        size_t num_classes,
                                         float mean,
                                         float stddev) {
     std::cout << "--- Cargando " << filePath
@@ -113,7 +114,7 @@ std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
   Tensor X({samples_to_load, channels, height, width}, final_pixel_data);
 
   // Las etiquetas se convierten a one-hot encoding. MNIST tiene 10 clases (0-9).
-  Tensor y = oneHotEncode(final_labels, 10);
+  Tensor y = oneHotEncode(final_labels, num_classes);
 
   std::cout << "Carga completa. " << samples_to_load << " muestras cargadas." << std::endl;
   std::cout << "  -> Forma de X (imágenes): " << X.shapeToString() << std::endl;
@@ -130,6 +131,7 @@ load_csv_data_train_val(const std::string& filePath,
                         size_t channels,
                         size_t height,
                         size_t width,
+                        size_t num_classes,
                         float mean,
                         float stddev)
 {
@@ -137,7 +139,7 @@ load_csv_data_train_val(const std::string& filePath,
         throw std::invalid_argument("train_frac + val_frac no debe superar 1.0");
 
     // 1. Cargar SOLO la fracción total solicitada (p.ej. 25 %)
-    XYPair all_data = load_csv_data(filePath, sample_frac, channels, height, width, mean, stddev);
+    XYPair all_data = load_csv_data(filePath, sample_frac, channels, height, width, num_classes, mean, stddev);
     Tensor& X_all = all_data.first;
     Tensor& y_all = all_data.second;
 

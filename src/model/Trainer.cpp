@@ -93,6 +93,7 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
   size_t channels = input_shape[1];
   size_t height = input_shape[2];
   size_t width = input_shape[3];
+  size_t num_classes = y_train.getShape()[1];
 
   size_t num_batches = (num_train_samples + config.batch_size - 1) / config.batch_size;
 
@@ -116,7 +117,7 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
 
     // Crear los tensores para el batch actual
     Tensor X_batch({count, channels, height, width});
-    Tensor y_batch({count, 10});
+    Tensor y_batch({count, num_classes});
 
     // Llenar el batch con los datos correspondientes a los índices barajados
     for (size_t j = 0; j < count; ++j) {
@@ -138,7 +139,7 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
           }
         }
       }
-      for (size_t c = 0; c < 10; ++c) {
+      for (size_t c = 0; c < num_classes; ++c) {
         y_batch(j, c) = y_sample(0, c);
       }
     }

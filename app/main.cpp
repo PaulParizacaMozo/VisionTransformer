@@ -39,13 +39,14 @@ int main() {
                             1,
                             28,
                             28,
+                            model_config.num_classes,
                             0.1307f, 0.3081f);
 
     // Para bloodmnist 3x28x28
     //auto train_data =
-    //    load_csv_data("data/bloodmnist_train.csv", 1.00f, 3, 28, 28, 0.1307f, 0.3081f);
+    //    load_csv_data("data/bloodmnist_train.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
     //auto valid_data =
-    //    load_csv_data("data/bloodmnist_val.csv", 1.00f, 3, 28, 28, 0.1307f, 0.3081f);
+    //    load_csv_data("data/bloodmnist_val.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
                             
     // --- 3. Crear Modelo y Entrenador ---
     VisionTransformer model(model_config);
