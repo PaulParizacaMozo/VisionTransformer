@@ -80,6 +80,10 @@ run_label() {
   echo "--- Predicción completada ---"
 }
 
+run_tl() {
+  ./${BUILD_DIR}/tl # Ejecutando train
+}
+
 # --- Flujo Principal ---
 echo "Iniciando flujo: Compilar y Ejecutar"
 echo "Proyecto: ${PROJECT_NAME}, Tipo de Compilación: ${BUILD_TYPE}"
@@ -100,6 +104,9 @@ elif [ "$1" == "visualizer" ]; then
   # g++ realTime.cpp -o realTime `pkg-config --cflags --libs opencv4` 
   # cd ..
   ./app/realTime
+elif [ "$1" == "tl" ]; then
+  build_project
+  run_tl
 else
   build_project
   run_app
