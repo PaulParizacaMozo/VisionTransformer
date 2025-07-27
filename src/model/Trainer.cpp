@@ -88,7 +88,12 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
  * @brief Ejecuta un ciclo completo sobre el dataset de entrenamiento (una época).
  */
 std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor &y_train, int epoch) {
-  size_t num_train_samples = X_train.getShape()[0];
+  const auto& input_shape = X_train.getShape();
+  size_t num_train_samples = input_shape[0];
+  size_t channels = input_shape[1];
+  size_t height = input_shape[2];
+  size_t width = input_shape[3];
+
   size_t num_batches = (num_train_samples + config.batch_size - 1) / config.batch_size;
 
   float total_loss = 0.0f;
@@ -96,7 +101,6 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
 
   // Crear el objeto de DataAugmentation
   // DataAugmentation augmentor(0.5f, 4, 30.0f, 4.0f); // Flip con probabilidad 0.5 y recorte con padding 4
-
 
   // Crear y barajar los índices al inicio de la época
   std::vector<size_t> indices(num_train_samples);
@@ -111,7 +115,7 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
       continue;
 
     // Crear los tensores para el batch actual
-    Tensor X_batch({count, 1, 28, 28});
+    Tensor X_batch({count, channels, height, width});
     Tensor y_batch({count, 10});
 
     // Llenar el batch con los datos correspondientes a los índices barajados
@@ -126,9 +130,12 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
       // x_sample = random_translation(x_sample, 4);         // Traslación aleatoria
       // x_sample = random_zoom(x_sample, 0.8f, 1.2f);       // Zoom aleatorio
 
-      for (size_t c = 0; c < 28; ++c) {
-        for (size_t r = 0; r < 28; ++r) {
-          X_batch(j, 0, c, r) = x_sample(0, 0, c, r);
+      for (size_t c = 0; c < channels; ++c) {
+        for (size_t h = 0; h < height; ++h) {
+          for (size_t w = 0; w < width; ++w) {
+            // Accedemos a los índices correctos en x_sample y X_batch
+            X_batch(j, c, h, w) = x_sample(0, c, h, w);
+          }
         }
       }
       for (size_t c = 0; c < 10; ++c) {

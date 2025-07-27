@@ -26,7 +26,7 @@ int main() {
 
     // --- 3. Cargar datos de prueba ---
     auto test_data =
-        load_csv_data("data/mnist_test.csv", 1.00f, 0.1307f, 0.3081f);
+        load_csv_data("data/mnist_test.csv", 1.00f, 1, 28, 28, 0.1307f, 0.3081f);
 
     // --- 3. Hacer predicciones ---
     const Tensor &X_test = test_data.first;
