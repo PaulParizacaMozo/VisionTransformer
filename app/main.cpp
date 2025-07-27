@@ -9,16 +9,16 @@ int main() {
   try {
     // --- 1. Definir Configuraciones ---
     ViTConfig model_config;
-    model_config.embedding_dim = 128; // 196 
+    model_config.embedding_dim = 196; // 196 
     model_config.num_layers = 2; // 6 
     model_config.num_heads = 4;
     model_config.patch_size = 7;
     model_config.mlp_hidden_dim = model_config.embedding_dim * 4;
-    model_config.dropout_rate = 0.3;
+    model_config.dropout_rate = 0.2;
 
     TrainerConfig train_config;
     train_config.epochs = 30;
-    train_config.batch_size = 64;// 128
+    train_config.batch_size = 128;// 128
     train_config.learning_rate = 3e-4f;
     train_config.weight_decay = 1e-4f; // 0.01f
     train_config.lr_init = train_config.learning_rate;
@@ -29,7 +29,7 @@ int main() {
     // Entrenamiento + validación
     auto [train_data, valid_data] =
     load_csv_data_train_val("data/mnist_train.csv",
-                            0.5f,   // sample_frac   → 25 % del total
+                            1.0f,   // sample_frac   → 25 % del total
                             0.80f,   // train_frac    → 80 % de ese 30%
                             0.20f,   // val_frac      → 20 % de ese 30%
                             0.1307f, 0.3081f);
@@ -44,9 +44,14 @@ int main() {
     std::cout << "\n¡Entrenamiento completado!" << std::endl;
 
     // --- 5. Guardar el Modelo ---
-    const std::string weights_path = "vit_mnist.weights.test";
+    const std::string model_name = "vit_mnist_test";
+    const std::string weights_path = model_name + ".weights";
+    const std::string config_path = model_name + ".json";
     std::cout << "\nGuardando pesos del modelo entrenado en: " << weights_path << std::endl;
     ModelUtils::save_weights(model, weights_path);
+
+    std::cout << "Guardando configuración del modelo en: " << config_path << std::endl;
+    ModelUtils::save_config(model_config, config_path);
 
     std::cout << "\nProceso finalizado." << std::endl;
 

@@ -8,26 +8,25 @@
 
 int main() {
   try {
-    // --- 1. Crear Modelo ---
-    ViTConfig model_config;
-    model_config.embedding_dim = 196;
-    model_config.num_layers = 2;
-    model_config.num_heads = 4;
-    model_config.patch_size = 7;
-    model_config.mlp_hidden_dim = model_config.embedding_dim * 4;
+    const std::string model_name = "vit_mnist_30ep_4_8";
+    const std::string weights_path = model_name + ".weights";
+    const std::string config_path = model_name + ".json";
 
-    VisionTransformer model(model_config);
+    // --- 1. Cargar conifguracion del ViT ---
+    std::cout << "Cargando configuración desde: " << config_path << std::endl;
+    ViTConfig loaded_config = ModelUtils::load_config( "models/" + config_path);
 
-    // Cargar datos de prueba
+    // --- 2. Crear y Cargar los pesos en el modelo ---
+    std::cout << "Construyendo modelo con la arquitectura cargada..." << std::endl;
+    VisionTransformer model(loaded_config);
+
+    std::cout << "Cargando pesos desde: " << weights_path << std::endl;
+    ModelUtils::load_weights(model, "models/" + weights_path);
+    std::cout << "Pesos cargados correctamente.\n";
+
+    // --- 3. Cargar datos de prueba ---
     auto test_data =
         load_csv_data("data/mnist_test.csv", 1.00f, 0.1307f, 0.3081f);
-
-    // --- 2. Cargar pesos del Modelo ---
-    const std::string weights_path = "vit_fashion_mnist.weights.30.ep";
-    std::cout << "\nCargando pesos del modelo en: " << weights_path
-              << std::endl;
-    ModelUtils::load_weights(model, weights_path);
-    std::cout << "\nPesos cargados correctamente.\n";
 
     // --- 3. Hacer predicciones ---
     const Tensor &X_test = test_data.first;

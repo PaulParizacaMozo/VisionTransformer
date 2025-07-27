@@ -9,6 +9,9 @@
 #include <memory>
 #include <vector>
 
+#include "utils/json.hpp"
+using json = nlohmann::json;
+
 /**
  * @struct ViTConfig
  * @brief Estructura para mantener todos los hiperparámetros de un Vision Transformer.
@@ -24,6 +27,34 @@ struct ViTConfig {
   size_t mlp_hidden_dim = 512; // embedding_dim * 4 es una buena regla general
   float dropout_rate = 0.1;    // (0.1 o 10% es un buen default)
 };
+
+// Como convertir una ViTConfig A un objeto JSON
+inline void to_json(json& j, const ViTConfig& config) {
+    j = json{
+        {"image_size", config.image_size},
+        {"patch_size", config.patch_size},
+        {"in_channels", config.in_channels},
+        {"num_classes", config.num_classes},
+        {"embedding_dim", config.embedding_dim},
+        {"num_heads", config.num_heads},
+        {"num_layers", config.num_layers},
+        {"mlp_hidden_dim", config.mlp_hidden_dim},
+        {"dropout_rate", config.dropout_rate}
+    };
+}
+
+// Como convertir un objeto JSON A una ViTConfig
+inline void from_json(const json& j, ViTConfig& config) {
+    j.at("image_size").get_to(config.image_size);
+    j.at("patch_size").get_to(config.patch_size);
+    j.at("in_channels").get_to(config.in_channels);
+    j.at("num_classes").get_to(config.num_classes);
+    j.at("embedding_dim").get_to(config.embedding_dim);
+    j.at("num_heads").get_to(config.num_heads);
+    j.at("num_layers").get_to(config.num_layers);
+    j.at("mlp_hidden_dim").get_to(config.mlp_hidden_dim);
+    j.at("dropout_rate").get_to(config.dropout_rate);
+}
 
 /**
  * @class VisionTransformer
