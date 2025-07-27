@@ -29,15 +29,15 @@ Tensor LayerNorm::forward(const Tensor &input, bool isTraining)
   {
     throw std::runtime_error("La última dimensión de la entrada no coincide con featureSize de LayerNorm.");
   }
-  std::cout << "Forward pass de LayerNorm con featureSize: " << this->featureSize << std::endl;
+  // std::cout << "Forward pass de LayerNorm con featureSize: " << this->featureSize << std::endl;
 
   // El número de muestras en el batch es el producto de todas las dimensiones excepto la última.
   size_t batchSize = input.getSize() / this->featureSize;
-  std::cout << "Tamaño del batch: " << batchSize << std::endl;
+  // std::cout << "Tamaño del batch: " << batchSize << std::endl;
 
   // Aplanamos temporalmente la entrada a 2D {batchSize, featureSize} para facilitar los cálculos.
   Tensor input2D = input.reshape({batchSize, this->featureSize});
-  std::cout << "Entrada aplanada a 2D: " << input2D.shapeToString() << std::endl;
+  // std::cout << "Entrada aplanada a 2D: " << input2D.shapeToString() << std::endl;
   // En modo entrenamiento, guardamos los valores necesarios para el backward pass.
 
   Tensor mean({batchSize, 1});
@@ -59,7 +59,7 @@ Tensor LayerNorm::forward(const Tensor &input, bool isTraining)
   }
 
   // // Devolvemos el tensor con su forma original.
-  std::cout << "Forward pass de LayerNorm completado. Shape: " << output.shapeToString() << std::endl;
+  // std::cout << "Forward pass de LayerNorm completado. Shape: " << output.shapeToString() << std::endl;
   return output.reshape(inputShape);
   // if (isTraining)
   // {

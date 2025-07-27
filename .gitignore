@@ -1,4 +1,5 @@
 # Ignorar directorios de construcción
+*.txt
 build/
 compile_commands.json 
 data/

@@ -10,6 +10,10 @@
 #include <sstream>
 #include <cstring>
 #include <memory>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
 #include <curand_kernel.h>
 
 // Calcula los pasos (strides) para navegar entre dimensiones
@@ -55,25 +59,48 @@ Tensor::Tensor(const std::vector<std::size_t> &newShape,
     computeStrides();
 }
 
-Tensor::Tensor(std::vector<float> ptr,
+Tensor::Tensor(const std::vector<float> &ptr,
                const std::vector<size_t> &newShape,
                const std::vector<size_t> &newStrides,
                size_t offset)
     : shape(newShape), strides(newStrides), dataOffset(offset),
-      totalSize(newShape.empty() ? 0 : std::accumulate(newShape.begin(), newShape.end(), 1, std::multiplies<size_t>()))
+      totalSize(newShape.empty() ? 0 : std::accumulate(newShape.begin(), newShape.end(), size_t(1), std::multiplies<size_t>()))
 {
-    // std::cout << "Tensor::Tensor: totalsize = " << totalSize << std::endl;
-    if (offset + totalSize > ptr.size())
+    if (totalSize == 0)
     {
-        std::cout << "Tensor::Tensor: offset = " << offset << ", totalSize = " << totalSize
-                  << ", ptr.size() = " << ptr.size() << std::endl;
-        throw std::out_of_range("Offset + totalSize  excede tamaño del vector original.");
+        throw std::invalid_argument("Tensor::Tensor: totalSize no puede ser cero.");
     }
 
-    cudaMalloc(&data, totalSize * sizeof(float));
+    if (offset + totalSize > ptr.size())
+    {
+        std::cerr << "Tensor::Tensor: offset = " << offset
+                  << ", totalSize = " << totalSize
+                  << ", ptr.size() = " << ptr.size() << std::endl;
+        throw std::out_of_range("Offset + totalSize excede el tamaño del vector original.");
+    }
 
-    // Copiar desde el offset en el vector host a la memoria GPU
-    cudaMemcpy(data, ptr.data() + offset, totalSize * sizeof(float), cudaMemcpyHostToDevice);
+    std::cout << "Tensor::Tensor: Copiando " << totalSize << " elementos desde offset " << offset << std::endl;
+
+    // Reservar en GPU
+    std::cout << "[DEBUG] Reservando " << (totalSize * sizeof(float)) / (1024.0 * 1024.0) << " MB" << std::endl;
+
+    cudaError_t allocErr = cudaMalloc(&data, totalSize * sizeof(float));
+    if (allocErr != cudaSuccess)
+    {
+        std::cerr << "cudaMalloc error: " << cudaGetErrorString(allocErr) << std::endl;
+        throw std::runtime_error("Fallo en cudaMalloc para Tensor::data");
+    }
+
+    // Copiar desde CPU a GPU
+    const float *src_ptr = ptr.data() + offset;
+    cudaError_t copyErr = cudaMemcpy(data, src_ptr, totalSize * sizeof(float), cudaMemcpyHostToDevice);
+    if (copyErr != cudaSuccess)
+    {
+        std::cerr << "cudaMemcpy error: " << cudaGetErrorString(copyErr) << std::endl;
+        cudaFree(data);
+        throw std::runtime_error("Fallo en cudaMemcpy desde ptr al device");
+    }
+
     computeStrides();
 }
 
@@ -228,7 +255,7 @@ Tensor Tensor::slice(size_t axis, size_t start, size_t count) const
     return out;
 }
 
-Tensor Tensor::reshape(const std::vector<size_t> &newShape) const
+Tensor Tensor::reshape(const std::vector<size_t> &newShape, bool print) const
 {
     if (!isContiguous())
     {
@@ -242,7 +269,18 @@ Tensor Tensor::reshape(const std::vector<size_t> &newShape) const
 
     std::vector<float> dataPtr(totalSize);
     cudaMemcpy(dataPtr.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
-
+    if (print)
+    {
+        // mostrar primeros 10 elementos de dataPtr
+        std::cout << "Tensor::reshape: dataPtr (" << dataPtr.size() << ") = ";
+        for (size_t i = 0; i < std::min(dataPtr.size(), size_t(10)); ++i)
+        {
+            std::cout << dataPtr[i] << " ";
+        }
+        std::cout << std::endl;
+    }
+    Tensor out(dataPtr, newShape, strides, dataOffset);
+    out.printFirstRow("Tensor::reshape out");
     Tensor tempForStrides(newShape);
     return Tensor(dataPtr, newShape, tempForStrides.getStrides(), this->dataOffset);
 }
@@ -705,35 +743,36 @@ Tensor matrixMultiply(const Tensor &a, const Tensor &b)
     return out;
 }
 __global__ void batchMatMulKernel(
-    const float *__restrict__ a_data, const size_t *a_shape, const size_t *a_strides, size_t a_offset,
-    const float *__restrict__ b_data, const size_t *b_shape, const size_t *b_strides, size_t b_offset,
-    float *__restrict__ out_data, const size_t *out_shape, const size_t *out_strides, size_t out_offset,
+    const float *__restrict__ a_data, const size_t *a_strides, size_t a_offset,
+    const float *__restrict__ b_data, const size_t *b_strides, size_t b_offset,
+    float *__restrict__ out_data, const size_t *out_strides, size_t out_offset,
     size_t batchSize, size_t m, size_t n, size_t p)
 {
-    size_t batch = blockIdx.z;
     size_t row = blockIdx.y * blockDim.y + threadIdx.y;
     size_t col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (batch >= batchSize || row >= m || col >= p)
+    if (row >= m || col >= p)
         return;
 
-    float sum = 0.0f;
-    for (size_t i = 0; i < n; ++i)
+    for (size_t batch = 0; batch < batchSize; ++batch)
     {
-        size_t a_idx = a_offset + batch * a_strides[0] + row * a_strides[1] + i * a_strides[2];
+        float sum = 0.0f;
+        for (size_t i = 0; i < n; ++i)
+        {
+            size_t a_idx = a_offset + batch * a_strides[0] + row * a_strides[1] + i * a_strides[2];
+            size_t b_idx = b_offset + batch * b_strides[0] + i * b_strides[1] + col * b_strides[2];
+            sum += a_data[a_idx] * b_data[b_idx];
+        }
 
-        size_t b_idx = b_offset + batch * b_strides[0] + i * b_strides[1] + col * b_strides[2];
-
-        sum += a_data[a_idx] * b_data[b_idx];
+        size_t out_idx = out_offset + batch * out_strides[0] + row * out_strides[1] + col * out_strides[2];
+        out_data[out_idx] = sum;
     }
-
-    size_t out_idx = out_offset + batch * out_strides[0] + row * out_strides[1] + col * out_strides[2];
-
-    out_data[out_idx] = sum;
 }
 
 Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b)
 {
+    a.printFirstRow("Tensor A");
+    b.printFirstRow("Tensor B");
     const auto &aShape = a.getShape();
     const auto &bShape = b.getShape();
 
@@ -770,22 +809,26 @@ Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b)
 
     // Lanzar kernel
     dim3 threadsPerBlock(16, 16);
-    dim3 numBlocks((P + 15) / 16, (M + 15) / 16, B);
-
+    dim3 numBlocks((P + 15) / 16, (M + 15) / 16);
+    cudaError_t err = cudaGetLastError();
     batchMatMulKernel<<<numBlocks, threadsPerBlock>>>(
-        a.getData(), d_a_shape, d_a_strides, a.getDataOffset(),
-        b.getData(), d_b_shape, d_b_strides, b.getDataOffset(),
-        out.getData(), d_out_shape, d_out_strides, out.getDataOffset(),
+        a.getData(), d_a_strides, a.getDataOffset(),
+        b.getData(), d_b_strides, b.getDataOffset(),
+        out.getData(), d_out_strides, out.getDataOffset(),
         B, M, N, P);
 
+    cudaDeviceSynchronize();
     cudaFree(d_a_shape);
     cudaFree(d_a_strides);
     cudaFree(d_b_shape);
     cudaFree(d_b_strides);
     cudaFree(d_out_shape);
     cudaFree(d_out_strides);
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+        std::cerr << "Kernel execution failed: " << cudaGetErrorString(err) << std::endl;
 
-    cudaDeviceSynchronize();
+    out.printFirstRow("Tensor Resultado BMM");
     return out;
 }
 __global__ void concatenate3d_kernel(
@@ -1846,4 +1889,175 @@ void Tensor::scale(float factor)
     size_t blocks = (totalSize + threads - 1) / threads;
     scaleKernel<<<blocks, threads>>>(data, totalSize, factor);
     cudaDeviceSynchronize(); // Opcional, si necesita bloqueo
+}
+__global__ void geluKernel(float *out, const float *in, size_t size)
+{
+    const float SQRT_2_OVER_PI = 0.7978845608f;
+
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size)
+    {
+        float x = in[idx];
+        float x_cubed = x * x * x;
+        float inner = SQRT_2_OVER_PI * (x + 0.044715f * x_cubed);
+        out[idx] = 0.5f * x * (1.0f + tanhf(inner));
+    }
+}
+Tensor Tensor::gelu_f() const
+{
+    if (!this->isContiguous())
+    {
+        throw std::runtime_error("gelu_f: solo implementado para tensores contiguos.");
+    }
+
+    Tensor result(this->shape); // nuevo tensor con misma shape
+
+    const size_t size = this->totalSize;
+    float *input_ptr = this->data;
+    float *output_ptr = result.data;
+
+    int threads = 256;
+    int blocks = (size + threads - 1) / threads;
+
+    geluKernel<<<blocks, threads>>>(output_ptr, input_ptr, size);
+    cudaDeviceSynchronize(); // O usar streams si lo deseas asincrónico
+
+    return result;
+}
+
+void Tensor::printData(const std::string &name) const
+{
+    std::vector<float> host_data(totalSize);
+    cudaMemcpy(host_data.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+
+    std::ofstream file(name + ".txt");
+    std::ostringstream oss;
+
+    oss << "--- Tensor: " << name << " (shape: ";
+    for (size_t i = 0; i < shape.size(); ++i)
+    {
+        oss << shape[i];
+        if (i != shape.size() - 1)
+            oss << "x";
+    }
+    oss << ") ---\n";
+
+    if (shape.size() == 1)
+    {
+        for (size_t i = 0; i < shape[0]; ++i)
+        {
+            oss << host_data[i];
+            if (i != shape[0] - 1)
+                oss << ", ";
+        }
+        oss << "\n";
+    }
+    else if (shape.size() == 2)
+    {
+        for (size_t i = 0; i < shape[0]; ++i)
+        {
+            for (size_t j = 0; j < shape[1]; ++j)
+            {
+                oss << host_data[i * shape[1] + j];
+                if (j != shape[1] - 1)
+                    oss << ", ";
+            }
+            oss << "\n";
+        }
+    }
+    else if (shape.size() == 3)
+    {
+        for (size_t b = 0; b < shape[0]; ++b)
+        {
+            oss << "Slice [" << b << "]\n";
+            for (size_t i = 0; i < shape[1]; ++i)
+            {
+                for (size_t j = 0; j < shape[2]; ++j)
+                {
+                    size_t idx = b * shape[1] * shape[2] + i * shape[2] + j;
+                    oss << host_data[idx];
+                    if (j != shape[2] - 1)
+                        oss << ", ";
+                }
+                oss << "\n";
+            }
+            oss << "\n";
+        }
+    }
+    else if (shape.size() == 4)
+    {
+        for (size_t n = 0; n < shape[0]; ++n)
+        {
+            oss << "Batch [" << n << "]\n";
+            for (size_t c = 0; c < shape[1]; ++c)
+            {
+                oss << " Channel [" << c << "]\n";
+                for (size_t h = 0; h < shape[2]; ++h)
+                {
+                    for (size_t w = 0; w < shape[3]; ++w)
+                    {
+                        size_t idx = n * shape[1] * shape[2] * shape[3] + c * shape[2] * shape[3] + h * shape[3] + w;
+                        oss << host_data[idx];
+                        if (w != shape[3] - 1)
+                            oss << ", ";
+                    }
+                    oss << "\n";
+                }
+                oss << "\n";
+            }
+            oss << "\n";
+        }
+    }
+    else
+    {
+        oss << "[printData] Visualización no implementada para dimensiones > 4.\n";
+    }
+
+    file << oss.str();
+    file.close();
+}
+void Tensor::printFirstRow(const std::string &name) const
+{
+    // Mostrar información de depuración
+    std::cout << "--- Tensor Debug: " << name << " ---" << std::endl;
+    std::cout << "  Forma: " << shapeToString() << std::endl;
+    std::cout << "  Contiguo: " << (isContiguous() ? "Sí" : "NO") << std::endl;
+    std::cout << "  Offset: " << dataOffset << std::endl;
+    std::cout << "  Strides: ";
+    for (const auto &s : strides)
+        std::cout << s << " ";
+    std::cout << std::endl;
+
+    // Copiar datos a CPU
+    std::vector<float> host_data(totalSize);
+    cudaMemcpy(host_data.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+
+    std::cout << "--- Primer fila de datos: ---" << std::endl;
+
+    if (shape.size() == 1)
+    {
+        for (size_t i = 0; i < shape[0]; ++i)
+        {
+            std::cout << host_data[i];
+            if (i != shape[0] - 1)
+                std::cout << ", ";
+        }
+        std::cout << std::endl;
+    }
+    else if (shape.size() >= 2)
+    {
+        size_t row_size = shape[shape.size() - 1];
+        for (size_t j = 0; j < row_size; ++j)
+        {
+            std::cout << host_data[j];
+            if (j != row_size - 1)
+                std::cout << ", ";
+        }
+        std::cout << std::endl;
+    }
+    else
+    {
+        std::cout << "[printFirstRow] Visualización no implementada para shape vacío o desconocido." << std::endl;
+    }
+    std::cout << "-------------------------" << std::endl;
 }

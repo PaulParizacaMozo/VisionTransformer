@@ -28,20 +28,26 @@ int main()
 
     // --- 3. Cargar datos de prueba ---
     auto test_data =
-        load_csv_data("data/mnist_test.csv", 1.00f, 1, 28, 28, 0.1307f, 0.3081f);
+        load_csv_data("data/mnist_test.csv", 0.01f, 1, 28, 28, 0.1307f, 0.3081f);
 
     // --- 3. Hacer predicciones ---
     const Tensor &X_test = test_data.first;
     const Tensor &y_test = test_data.second;
-
+    std::cout << "Shape de X_test: " << X_test.shapeToString() << std::endl;
+    X_test.printData("X_test");
+    std::cout << "Shape de y_test: " << y_test.shapeToString() << std::endl;
+    y_test.printData("y_test");
     std::cout << "Realizando inferencia en el conjunto de prueba..." << std::endl;
     Tensor logits = model.forward(
         X_test, false); // `isTraining` es `false` durante la inferencia
 
-    std::cout << "Inferencia completada.\n";
+    std::cout << "Inferencia completada. Shape de logits: "
+              << logits.shapeToString() << std::endl;
+    logits.printData("Logits");
     Tensor probabilities = softmax(logits);
-    std::cout << "Probabilidades calculadas.\n";
-
+    std::cout << "Probabilidades calculadas. Shape: "
+              << probabilities.shapeToString() << std::endl;
+    probabilities.printData("Probabilidades");
     std::vector<int> predicted_class = probabilities.argmaxPerRow(); // predicción por argmax de softmax
     std::vector<int> true_label = y_test.argmaxOneHot();             // etiqueta verdadera por argmax del one-hot
 

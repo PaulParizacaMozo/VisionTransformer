@@ -10,38 +10,41 @@ const float SQRT_2_OVER_PI = 0.7978845608028654f;
 
 GELU::GELU() {}
 
-Tensor GELU::forward(const Tensor &input, bool isTraining) {
-  if (isTraining) {
+Tensor GELU::forward(const Tensor &input, bool isTraining)
+{
+  if (isTraining)
+  {
     this->inputTensor = input;
   }
+  return input.gelu_f();
+  //   Tensor result(input.getShape());
+  //   const auto &shape = input.getShape();
 
-  Tensor result(input.getShape());
-  const auto &shape = input.getShape();
+  //   // Implementación genérica que funciona para cualquier tensor contiguo.
+  //   // Usar getData() es más rápido si sabemos que el tensor es contiguo.
+  //   if (input.isContiguous() && result.isContiguous()) {
+  //     const float *in_data = input.getData();
+  //     float *out_data = result.getData();
+  //     size_t size = input.getSize();
 
-  // Implementación genérica que funciona para cualquier tensor contiguo.
-  // Usar getData() es más rápido si sabemos que el tensor es contiguo.
-  if (input.isContiguous() && result.isContiguous()) {
-    const float *in_data = input.getData();
-    float *out_data = result.getData();
-    size_t size = input.getSize();
+  // #pragma omp parallel for
+  //     for (size_t i = 0; i < size; ++i) {
+  //       float x = in_data[i];
+  //       float x_cubed = x * x * x;
+  //       float inner = SQRT_2_OVER_PI * (x + 0.044715f * x_cubed);
+  //       out_data[i] = 0.5f * x * (1.0f + std::tanh(inner));
+  //     }
+  //   } else {
+  //     // Fallback más lento para vistas no contiguas (usa operator())
+  //     // (Por ahora, lanzamos un error o implementamos con bucles anidados si es necesario)
+  //     throw std::runtime_error("GELU::forward solo implementado para tensores contiguos.");
+  //   }
 
-#pragma omp parallel for
-    for (size_t i = 0; i < size; ++i) {
-      float x = in_data[i];
-      float x_cubed = x * x * x;
-      float inner = SQRT_2_OVER_PI * (x + 0.044715f * x_cubed);
-      out_data[i] = 0.5f * x * (1.0f + std::tanh(inner));
-    }
-  } else {
-    // Fallback más lento para vistas no contiguas (usa operator())
-    // (Por ahora, lanzamos un error o implementamos con bucles anidados si es necesario)
-    throw std::runtime_error("GELU::forward solo implementado para tensores contiguos.");
-  }
-
-  return result;
+  // return result;
 }
 
-Tensor GELU::backward(const Tensor &outputGradient) {
+Tensor GELU::backward(const Tensor &outputGradient)
+{
   Tensor inputGradient(inputTensor.getShape());
   const auto &shape = inputTensor.getShape();
 
@@ -50,14 +53,16 @@ Tensor GELU::backward(const Tensor &outputGradient) {
   // d(inner)/dx = sqrt(2/pi) * (1 + 3 * 0.044715 * x^2)
   // sech^2(z) = 1 - tanh^2(z)
 
-  if (inputTensor.isContiguous() && outputGradient.isContiguous()) {
+  if (inputTensor.isContiguous() && outputGradient.isContiguous())
+  {
     const float *in_data = inputTensor.getData();
     const float *grad_out_data = outputGradient.getData();
     float *grad_in_data = inputGradient.getData();
     size_t size = inputTensor.getSize();
 
 #pragma omp parallel for
-    for (size_t i = 0; i < size; ++i) {
+    for (size_t i = 0; i < size; ++i)
+    {
       float x = in_data[i];
       float x_squared = x * x;
       float x_cubed = x_squared * x;
@@ -73,7 +78,9 @@ Tensor GELU::backward(const Tensor &outputGradient) {
 
       grad_in_data[i] = dGELU_dx * grad_out_data[i];
     }
-  } else {
+  }
+  else
+  {
     throw std::runtime_error("GELU::backward solo implementado para tensores contiguos.");
   }
 

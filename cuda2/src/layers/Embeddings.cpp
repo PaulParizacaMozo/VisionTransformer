@@ -24,28 +24,28 @@ Embeddings::Embeddings(size_t image_height, size_t image_width, size_t patch_siz
 
 Tensor Embeddings::forward(const Tensor &input, bool isTraining)
 {
-  std::cout << "--Embeddings::forward--" << std::endl;
+  // std::cout << "--Embeddings::forward--" << std::endl;
   size_t batchSize = input.getShape()[0];
-  std::cout << "Batch size: " << batchSize << std::endl;
+  // std::cout << "Batch size: " << batchSize << std::endl;
 
   // 1. Obtener los embeddings de los parches
   Tensor patch_embeddings = this->patcher->forward(input, isTraining); // -> {B, N, D}
-  std::cout << "--Embeddings::Parches embeddings: " << patch_embeddings.shapeToString() << std::endl;
+  // std::cout << "--Embeddings::Parches embeddings: " << patch_embeddings.shapeToString() << std::endl;
   // 2. Expandir el token CLS para que coincida con el tamaño del batch
   // expand() crea una vista {B, 1, D} sin copiar memoria.
   // Tensor cls_token_batch({batchSize, 1, this->embedding_dim});
 
   // 2. Expandir el token CLS para que coincida con el tamaño del batch
   Tensor cls_token_batch = clsToken.expand({batchSize, 1, embedding_dim});
-  std::cout << "--Embeddings::CLS token batch: " << cls_token_batch.shapeToString() << std::endl;
+  // std::cout << "--Embeddings::CLS token batch: " << cls_token_batch.shapeToString() << std::endl;
 
   // 3. Concatenar el CLS token y los parches a lo largo del eje de la secuencia (axis=1)
   Tensor embeddings_with_cls = concatenate({cls_token_batch, patch_embeddings}, 1); // -> {B, N+1, D}
-  std::cout << "--Embeddings::Embeddings con CLS: " << embeddings_with_cls.shapeToString() << std::endl;
+  // std::cout << "--Embeddings::Embeddings con CLS: " << embeddings_with_cls.shapeToString() << std::endl;
   // 4. Añadir la codificación posicional
   // addBroadcast suma {1, N+1, D} a cada muestra de {B, N+1, D}
   embeddings_with_cls.addBroadcast(this->positionalEncoding);
-  std::cout << "--Embeddings::Embeddings con codificación posicional: " << embeddings_with_cls.shapeToString() << std::endl;
+  // std::cout << "--Embeddings::Embeddings con codificación posicional: " << embeddings_with_cls.shapeToString() << std::endl;
 
   return embeddings_with_cls;
 }

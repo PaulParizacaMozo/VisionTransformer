@@ -23,16 +23,19 @@ Tensor VisionTransformer::forward(const Tensor &input, bool isTraining)
 {
   std::cout << "Forward pass del Vision Transformer..." << std::endl;
   Tensor x = embeddings.forward(input, isTraining);
-  std::cout << "Embeddings calculados. " << std::endl;
+  x.printFirstRow("Embeddings iniciales");
+  std::cout << "Embeddings calculados. Shape: " << x.shapeToString() << std::endl;
 
   for (auto &block : encoder_blocks)
   {
     x = block.forward(x, isTraining);
   }
-  std::cout << "Bloques codificadores procesados. " << std::endl;
+  x.printFirstRow("Bloques codificadores");
+  std::cout << "Bloques codificadores procesados. Shape: " << x.shapeToString() << std::endl;
 
   x = final_norm.forward(x, isTraining);
-  std::cout << "Normalización final aplicada. " << std::endl;
+  x.printFirstRow("Normalización final");
+  std::cout << "Normalización final aplicada.  Shape: " << x.shapeToString() << std::endl;
 
   if (isTraining)
   {
@@ -42,8 +45,8 @@ Tensor VisionTransformer::forward(const Tensor &input, bool isTraining)
 
   // Extraemos solo el token CLS (en la posición 0) para la clasificación
   Tensor cls_token = x.slice(1, 0, 1).contiguous().reshape({input.getShape()[0], config.embedding_dim});
-  std::cout << "Token CLS extraído. " << std::endl;
-
+  std::cout << "Token CLS extraído. Shape: " << cls_token.shapeToString() << std::endl;
+  x.printFirstRow("Token CLS");
   return mlp_head.forward(cls_token, isTraining);
 }
 

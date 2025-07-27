@@ -41,7 +41,7 @@ public:
     Tensor();
     explicit Tensor(const std::vector<size_t> &shape);
     Tensor(const std::vector<size_t> &shape, const std::vector<float> &data);
-    Tensor(std::vector<float> dataPtr, const std::vector<size_t> &shape,
+    Tensor(const std::vector<float> &ptr, const std::vector<size_t> &shape,
            const std::vector<size_t> &strides, size_t offset);
     Tensor(const Tensor &other) = default;
     Tensor(Tensor &&other) noexcept = default;
@@ -50,7 +50,7 @@ public:
     ~Tensor() = default;
     // --- Operaciones y Vistas ---
     Tensor slice(size_t axis, size_t start, size_t count) const;
-    Tensor reshape(const std::vector<size_t> &newShape) const;
+    Tensor reshape(const std::vector<size_t> &newShape, bool print = false) const;
     Tensor transpose(size_t dim1, size_t dim2) const;
     Tensor sum(size_t axis) const;
     void addBroadcast(const Tensor &other);
@@ -118,6 +118,9 @@ public:
                      Tensor *normalizedOut,
                      float epsilon) const;
     void scale(float factor);
+    Tensor gelu_f() const;
+    void printData(const std::string &name) const;
+    void printFirstRow(const std::string &name) const;
 };
 // --- Funciones Libres para Operaciones de Tensor ---
 
