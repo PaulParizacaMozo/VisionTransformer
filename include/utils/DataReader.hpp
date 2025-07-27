@@ -25,16 +25,21 @@ using XYPair = std::pair<Tensor, Tensor>;   // {X, y}
 std::pair<Tensor, Tensor>
 load_csv_data(const std::string& filePath,
               float sample_fraction,
+              size_t channels,
+              size_t height,
+              size_t width,
               float mean  = 0.2860f,   // media MNIST por defecto
               float stddev = 0.3530f); // desviación estándar MNIST
 
-// ───────── NUEVA SOBRECARGA ─────────
-/// Devuelve {train_pair, valid_pair}
+// Devuelve {train_pair, valid_pair}
 std::pair<XYPair, XYPair>
 load_csv_data_train_val(const std::string& filePath,
                         float sample_frac,   // p. ej. 0.25            (25 % del dataset)
                         float train_frac,    //        0.80            (80 % de ese 25 %)
                         float val_frac,      //        0.20            (20 % de ese 25 %)
+                        size_t channels,
+                        size_t height,
+                        size_t width,
                         float mean  = 0.2860f,
                         float stddev = 0.3530f);
 

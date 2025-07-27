@@ -29,6 +29,20 @@ void save_weights(const VisionTransformer &model, const std::string &filePath);
  */
 void load_weights(VisionTransformer &model, const std::string &filePath);
 
+/**
+ * @brief Guarda la configuración de un modelo en un archivo JSON.
+ * @param config La estructura de configuración a guardar.
+ * @param filePath La ruta al archivo .json donde se guardará.
+ */
+void save_config(const ViTConfig& config, const std::string& filePath);
+
+/**
+ * @brief Carga la configuración de un modelo desde un archivo JSON.
+ * @param filePath La ruta al archivo .json desde donde se cargará.
+ * @return Una estructura ViTConfig con los valores cargados.
+ */
+ViTConfig load_config(const std::string& filePath);
+
 } // namespace ModelUtils
 
 #endif // MODELUTILS_HPP

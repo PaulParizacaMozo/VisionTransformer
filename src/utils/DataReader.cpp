@@ -1,4 +1,4 @@
-#include "utils/DataReader.hpp" // Incluimos la cabecera que acabamos de definir
+#include "utils/DataReader.hpp"
 #include <algorithm>
 #include <ctime>
 #include <fstream>
@@ -30,8 +30,11 @@ Tensor oneHotEncode(const std::vector<int> &labels, int num_classes) {
 // --- Implementación de la Función Principal ---
 std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
                                         float sample_fraction,
-                                        float mean,         // <- NUEVO
-                                        float stddev) {     // <- NUEVO
+                                        size_t channels,
+                                        size_t height,
+                                        size_t width,
+                                        float mean,
+                                        float stddev) {
     std::cout << "--- Cargando " << filePath
               << "  (fracción: " << sample_fraction * 100 << "%, "
               << "μ=" << mean << ", σ=" << stddev << ")"
@@ -41,6 +44,8 @@ std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
   if (!file.is_open()) {
     throw std::runtime_error("Error: No se pudo abrir el archivo: " + filePath);
   }
+
+  const size_t expected_pixels = channels * height * width;
 
   // 1. Leer todas las líneas del archivo CSV
   std::string line;
@@ -57,17 +62,16 @@ std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
     std::getline(ss, value_str, ',');
     all_labels.push_back(std::stoi(value_str));
 
-    // Leer los 784 píxeles y normalizarlos
+    // Leer los píxeles y normalizarlos
     std::vector<float> pixels;
-    pixels.reserve(784);
+    pixels.reserve(expected_pixels);
     while (std::getline(ss, value_str, ',')) {
       // Normalizar el valor del píxel a [0, 1]
       float v = std::stof(value_str) / 255.0f;        // [0,1]
       v = (v - mean) / stddev;                        // normalización Z
       pixels.push_back(v);
-      // pixels.push_back(std::stof(value_str) / 255.0f);
     }
-    if (pixels.size() != 784) {
+    if (pixels.size() != expected_pixels) {
       std::cerr << "Advertencia: Se encontró una fila con un número de píxeles incorrecto. Se ignora." << std::endl;
       all_labels.pop_back(); // Eliminar la etiqueta correspondiente
       continue;
@@ -92,7 +96,7 @@ std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
     samples_to_load = total_samples;
 
   std::vector<float> final_pixel_data;
-  final_pixel_data.reserve(samples_to_load * 784);
+  final_pixel_data.reserve(samples_to_load * expected_pixels);
   std::vector<int> final_labels;
   final_labels.reserve(samples_to_load);
 
@@ -106,7 +110,7 @@ std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
   // 3. Crear los tensores finales
   // La forma para las imágenes de entrada del ViT es {N, C, H, W}
   // Para MNIST, C=1, H=28, W=28.
-  Tensor X({samples_to_load, 1, 28, 28}, final_pixel_data);
+  Tensor X({samples_to_load, channels, height, width}, final_pixel_data);
 
   // Las etiquetas se convierten a one-hot encoding. MNIST tiene 10 clases (0-9).
   Tensor y = oneHotEncode(final_labels, 10);
@@ -123,6 +127,9 @@ load_csv_data_train_val(const std::string& filePath,
                         float sample_frac,
                         float train_frac,
                         float val_frac,
+                        size_t channels,
+                        size_t height,
+                        size_t width,
                         float mean,
                         float stddev)
 {
@@ -130,7 +137,7 @@ load_csv_data_train_val(const std::string& filePath,
         throw std::invalid_argument("train_frac + val_frac no debe superar 1.0");
 
     // 1. Cargar SOLO la fracción total solicitada (p.ej. 25 %)
-    XYPair all_data = load_csv_data(filePath, sample_frac, mean, stddev);
+    XYPair all_data = load_csv_data(filePath, sample_frac, channels, height, width, mean, stddev);
     Tensor& X_all = all_data.first;
     Tensor& y_all = all_data.second;
 

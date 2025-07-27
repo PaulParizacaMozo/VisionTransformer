@@ -2,6 +2,9 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include "utils/json.hpp"
+
+using json = nlohmann::json;
 
 namespace ModelUtils {
 
@@ -95,6 +98,41 @@ void load_weights(VisionTransformer &model, const std::string &filePath) {
 
   inFile.close();
   std::cout << "Pesos cargados correctamente." << std::endl;
+}
+
+void save_config(const ViTConfig& config, const std::string& filePath) {
+    std::cout << "Guardando configuración del modelo en: " << filePath << "..." << std::endl;
+    
+    json j = config; // Conversión automática gracias a nuestra función to_json
+
+    std::ofstream outFile(filePath);
+    if (!outFile) {
+        throw std::runtime_error("No se pudo abrir el archivo para escritura: " + filePath);
+    }
+    
+    // Escribimos el JSON en el archivo con una indentación de 4 espacios para que sea legible
+    outFile << std::setw(4) << j << std::endl;
+    outFile.close();
+    
+    std::cout << "Configuración guardada correctamente." << std::endl;
+}
+
+ViTConfig load_config(const std::string& filePath) {
+    std::cout << "Cargando configuración del modelo desde: " << filePath << "..." << std::endl;
+
+    std::ifstream inFile(filePath);
+    if (!inFile) {
+        throw std::runtime_error("No se pudo abrir el archivo para lectura: " + filePath);
+    }
+
+    json j;
+    inFile >> j; // Se parsea el archivo JSON
+
+    // La conversión a ViTConfig
+    ViTConfig config = j.get<ViTConfig>();
+    
+    std::cout << "Configuración cargada correctamente." << std::endl;
+    return config;
 }
 
 } // namespace ModelUtils
