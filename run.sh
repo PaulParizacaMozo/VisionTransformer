@@ -73,6 +73,13 @@ run_image() {
   echo "--- Predicción completada ---"
 }
 
+run_label() {
+  local image_path="$1"
+  echo "--- Ejecutando testLabel con imagen '${image_path}' ---"
+  ./${BUILD_DIR}/testLabel "${image_path}"
+  echo "--- Predicción completada ---"
+}
+
 # --- Flujo Principal ---
 echo "Iniciando flujo: Compilar y Ejecutar"
 echo "Proyecto: ${PROJECT_NAME}, Tipo de Compilación: ${BUILD_TYPE}"
@@ -84,6 +91,15 @@ if [ "$1" == "test" ]; then
 elif [ "$1" == "image" ]; then
   build_project
   run_image "$2"
+elif [ "$1" == "label" ]; then
+  build_project
+  run_label "$2"
+elif [ "$1" == "visualizer" ]; then
+  # solo si se tiene opencv instalado
+  # cd app
+  # g++ realTime.cpp -o realTime `pkg-config --cflags --libs opencv4` 
+  # cd ..
+  ./app/realTime
 else
   build_project
   run_app

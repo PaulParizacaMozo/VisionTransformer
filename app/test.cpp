@@ -6,6 +6,61 @@
 #include <limits>
 #include <vector>
 
+/* ────────────────────────────────────────────────────────────── *
+ * Imprime la matriz de confusion normalizada (por filas) con la
+ * diagonal resaltada en color verde                              *
+ * ────────────────────────────────────────────────────────────── */
+void printConfusionMatrix(const std::vector<std::vector<int>>& confusion)
+{
+    const size_t num_classes = confusion.size();
+
+    /* -------- Normalizar (por filas) ---------- */
+    std::vector<std::vector<float>> norm(num_classes,
+                                         std::vector<float>(num_classes, 0.f));
+
+    for (size_t i = 0; i < num_classes; ++i) {
+        int row_sum = 0;
+        for (int v : confusion[i]) row_sum += v;
+        if (row_sum == 0) continue;
+        for (size_t j = 0; j < num_classes; ++j)
+            norm[i][j] = static_cast<float>(confusion[i][j]) / row_sum;
+    }
+
+    /* ----------- Impresión bonita ------------- */
+    const int w_idx  = 6;   // ancho para índice de clase
+    const int w_cell = 6;   // ancho de cada celda
+
+    std::cout << "\n=== Matriz de Confusión normalizada (por filas) ===\n";
+
+    /* cabecera */
+    std::cout << std::setw(w_idx) << " " << " ";
+    for (size_t j = 0; j < num_classes; ++j)
+        std::cout << std::setw(w_cell) << j;
+    std::cout << '\n';
+
+    /* separador */
+    auto line = [&]{
+        std::cout << std::string(w_idx + 1 + w_cell * num_classes, '-') << '\n';
+    };
+    line();
+
+    std::cout << std::fixed << std::setprecision(2);
+    for (size_t i = 0; i < num_classes; ++i) {
+        std::cout << std::setw(w_idx - 1) << i << " |";
+        for (size_t j = 0; j < num_classes; ++j) {
+            float val = norm[i][j] * 100.f;        // porcentaje
+
+            if (i == j) std::cout << "\033[1;32m"; // verde‑negrita
+            std::cout << std::setw(w_cell) << val;
+            if (i == j) std::cout << "\033[0m";    // reset
+        }
+        std::cout << '\n';
+    }
+    line();
+    std::cout << "(valores en % — diagonal resaltada)\n\n";
+}
+
+
 int main() {
   try {
     const std::string model_name = "vit_mnist_30ep_4_8";
@@ -121,7 +176,8 @@ int main() {
     }
     print_separator();
 
-    // std::cout << "--- Pruebas finalizadas ---\n";
+    /* Imprimir la matriz de confusión normalizada */
+    printConfusionMatrix(confusion);
 
   } catch (const std::exception &e) {
     std::cerr << "\nERROR CRÍTICO: " << e.what() << std::endl;
