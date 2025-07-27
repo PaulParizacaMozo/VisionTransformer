@@ -28,6 +28,7 @@ load_csv_data(const std::string& filePath,
               size_t channels,
               size_t height,
               size_t width,
+              size_t num_classes,
               float mean  = 0.2860f,   // media MNIST por defecto
               float stddev = 0.3530f); // desviación estándar MNIST
 
@@ -40,6 +41,7 @@ load_csv_data_train_val(const std::string& filePath,
                         size_t channels,
                         size_t height,
                         size_t width,
+                        size_t num_classes,
                         float mean  = 0.2860f,
                         float stddev = 0.3530f);
 
