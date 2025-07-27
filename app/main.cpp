@@ -10,16 +10,16 @@ int main() {
     // --- 1. Definir Configuraciones ---
     ViTConfig model_config;
     model_config.embedding_dim = 64; // 128 - 196 
-    model_config.num_layers = 8; // 6 
-    model_config.num_heads = 16;
-    model_config.patch_size = 14;
-    model_config.num_classes = 10;
-    model_config.in_channels = 1;
+    model_config.num_layers = 2; // 6 
+    model_config.num_heads = 4;
+    model_config.patch_size = 7;
+    model_config.num_classes = 8;
+    model_config.in_channels = 3;
     model_config.mlp_hidden_dim = model_config.embedding_dim * 4;
-    model_config.dropout_rate = 0.2;
+    model_config.dropout_rate = 0.1;
 
     TrainerConfig train_config;
-    train_config.epochs = 30;
+    train_config.epochs = 5;
     train_config.batch_size = 64;// 128
     train_config.learning_rate = 3e-4f;
     train_config.weight_decay = 1e-4f; // 0.01f
@@ -31,22 +31,22 @@ int main() {
     
     // Para mnist y fashin
     // Entrenamiento + validación
-    auto [train_data, valid_data] =
-    load_csv_data_train_val("data/mnist_train.csv",
-                            0.5f,   // sample_frac   → 25 % del total
-                            0.80f,   // train_frac    → 80 % de ese 30%
-                            0.20f,   // val_frac      → 20 % de ese 30%
-                            1,
-                            28,
-                            28,
-                            model_config.num_classes,
-                            0.1307f, 0.3081f);
+    //auto [train_data, valid_data] =
+    //load_csv_data_train_val("data/mnist_train.csv",
+    //                        0.5f,   // sample_frac   → 25 % del total
+    //                        0.80f,   // train_frac    → 80 % de ese 30%
+    //                        0.20f,   // val_frac      → 20 % de ese 30%
+    //                        1,
+    //                        28,
+    //                        28,
+    //                        model_config.num_classes,
+    //                        0.1307f, 0.3081f);
 
     // Para bloodmnist 3x28x28
-    //auto train_data =
-    //    load_csv_data("data/bloodmnist_train.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
-    //auto valid_data =
-    //    load_csv_data("data/bloodmnist_val.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
+    auto train_data =
+        load_csv_data("data/bloodmnist_train.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
+    auto valid_data =
+        load_csv_data("data/bloodmnist_val.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
                             
     // --- 3. Crear Modelo y Entrenador ---
     VisionTransformer model(model_config);

@@ -394,7 +394,25 @@ Tensor Tensor::sum(size_t axis) const {
   // Bucle genérico que itera sobre la forma de salida
   // y suma a lo largo del eje colapsado de la entrada.
   // Esto es más lento pero funciona para cualquier dimensionalidad.
-  if (shape.size() == 2) {
+  if (shape.size() == 4) {
+    #pragma omp parallel for collapse(4)
+    for (size_t d0 = 0; d0 < outputShape[0]; ++d0) {
+        for (size_t d1 = 0; d1 < outputShape[1]; ++d1) {
+            for (size_t d2 = 0; d2 < outputShape[2]; ++d2) {
+                for (size_t d3 = 0; d3 < outputShape[3]; ++d3) {
+                    float current_sum = 0.0f;
+                    for (size_t i = 0; i < this->shape[axis]; ++i) {
+                        std::vector<size_t> idx = {d0, d1, d2, d3};
+                        idx[axis] = i;
+                        current_sum += (*this)(idx[0], idx[1], idx[2], idx[3]);
+                    }
+                    result(d0, d1, d2, d3) = current_sum;
+                }
+            }
+        }
+    }
+  }
+  else if (shape.size() == 2) {
 #pragma omp parallel for collapse(2)
     for (size_t i = 0; i < outputShape[0]; ++i) {
       for (size_t j = 0; j < outputShape[1]; ++j) {
