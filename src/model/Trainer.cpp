@@ -109,6 +109,13 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
   std::mt19937 rng(static_cast<uint32_t>(epoch));   // semilla = epoch
   std::shuffle(indices.begin(), indices.end(), rng);
 
+  // Configurar el aumentador de datos
+  DataAugmentation::Config aug_cfg;
+  aug_cfg.rotation_prob = 0.5f;
+  aug_cfg.translate_prob = 0.5f;
+  aug_cfg.zoom_prob = 0.5f;
+  DataAugmentation augmentor(aug_cfg);
+
   for (size_t i = 0; i < num_batches; ++i) {
     size_t start_idx_in_indices = i * config.batch_size;
     size_t count = std::min(config.batch_size, num_train_samples - start_idx_in_indices);
@@ -127,9 +134,9 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
 
       // x_sample = random_flip(x_sample);                // Flip Horizontal
       // x_sample = random_crop(x_sample, 24, 4);         // Recorte 24x24 con padding 4
-      // x_sample = random_rotation(x_sample, 30.0f);        // Rotación aleatoria 30°
+      // x_sample = random_rotation(x_sample, 10.0f);        // Rotación aleatoria 30°
       // x_sample = random_translation(x_sample, 4);         // Traslación aleatoria
-      // x_sample = random_zoom(x_sample, 0.8f, 1.2f);       // Zoom aleatorio
+      // x_sample = random_zoom(x_sample, 0.9f, 1.1f);       // Zoom aleatorio
 
       for (size_t c = 0; c < channels; ++c) {
         for (size_t h = 0; h < height; ++h) {
@@ -144,11 +151,13 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
       }
     }
 
-    // --- Aplicar Data Augmentation
-    // augmentor.apply(X_batch);
+    // Aplicar data augmentation al batch completo (¡eficiente!)
+    Tensor X_batch_augmented = augmentor.apply(X_batch);
+    // Usar X_batch_augmented en lugar de X_batch
+    Tensor logits = model.forward(X_batch_augmented, true);
 
     // --- Ciclo de entrenamiento para el batch ---
-    Tensor logits = model.forward(X_batch, true);
+    // Tensor logits = model.forward(X_batch, true);
     total_loss += loss_fn.calculate(logits, y_batch);
     total_accuracy += calculate_accuracy(logits, y_batch);
 
@@ -172,7 +181,7 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
 
     std::cout << "\rEntrenando... Batch " << i + 1
               << "/" << num_batches
-              << " | LR: " << lr_now << std::flush;
+              << " | LR: " << std::fixed << std::setprecision(8) << optimizer.getLearningRate() << std::flush;
   }
 
   return {total_loss / num_batches, total_accuracy / num_batches};

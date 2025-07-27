@@ -637,3 +637,24 @@ void Tensor::printDebugInfo(const std::string &name) const {
   std::cout << std::endl;
   std::cout << "-------------------------" << std::endl;
 }
+
+
+Tensor Tensor::clone() const {
+    // Crear un nuevo tensor con la misma forma
+    Tensor new_tensor(shape);
+    
+    // Copiar los datos elemento por elemento (esto maneja correctamente strides y offsets)
+    for (size_t i = 0; i < totalSize; ++i) {
+        // Calcula las coordenadas multidimensionales
+        size_t remaining = i;
+        size_t linear_idx = dataOffset;
+        for (size_t dim = 0; dim < shape.size(); ++dim) {
+            size_t coord = remaining / strides[dim];
+            linear_idx += coord * strides[dim];
+            remaining %= strides[dim];
+        }
+        new_tensor.dataPtr->at(i) = dataPtr->at(linear_idx);
+    }
+    
+    return new_tensor;
+}
