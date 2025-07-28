@@ -246,6 +246,17 @@ Tensor Tensor::contiguous() const {
         for (size_t d2 = 0; d2 < shape[2]; ++d2)
           new_tensor(d0, d1, d2) = (*this)(d0, d1, d2);
   } // Añadir más casos si es necesario
+  else if (shape.size() == 2) {
+      #pragma omp parallel for collapse(2)
+      for (size_t d0 = 0; d0 < shape[0]; ++d0)
+      for (size_t d1 = 0; d1 < shape[1]; ++d1)
+          new_tensor(d0, d1) = (*this)(d0, d1);
+  }
+  else if (shape.size() == 1) {
+      #pragma omp parallel for
+      for (size_t d0 = 0; d0 < shape[0]; ++d0)
+          new_tensor(d0) = (*this)(d0);
+  }
   else {
     throw std::runtime_error("contiguous() no implementado para este rank.");
   }

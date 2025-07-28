@@ -1,6 +1,7 @@
 #include "layers/Dense.hpp"
 #include "core/Tensor.hpp" // Para matrixMultiply y otras operaciones
 #include <stdexcept>
+#include "utils/CudaUtils.hpp"
 
 Dense::Dense(size_t inputSize, size_t outputSize) {
   // float stddev = std::sqrt(2.0f / static_cast<float>(inputSize));
@@ -89,13 +90,17 @@ Tensor Dense::backward(const Tensor &outputGradient) {
   }
 
   // --- Los cálculos de gradientes ahora se hacen siempre en 2D ---
-  Tensor inputTransposed = input_to_process.transpose(0, 1);
-  this->weightGradients = matrixMultiply(inputTransposed, grad_to_process);
+  //Tensor inputTransposed = input_to_process.transpose(0, 1);
+  Tensor inputTransposed = input_to_process.transpose(0, 1).contiguous();
+  //this->weightGradients = matrixMultiply(inputTransposed, grad_to_process);
+  this->weightGradients = matrixMultiply_cuda(inputTransposed, grad_to_process);
 
   this->biasGradients = grad_to_process.sum(0);
 
-  Tensor weightsTransposed = this->weights.transpose(0, 1);
-  Tensor inputGradient2D = matrixMultiply(grad_to_process, weightsTransposed);
+  //Tensor weightsTransposed = this->weights.transpose(0, 1);
+  Tensor weightsTransposed = this->weights.transpose(0, 1).contiguous();
+  //Tensor inputGradient2D = matrixMultiply(grad_to_process, weightsTransposed);
+  Tensor inputGradient2D = matrixMultiply_cuda(grad_to_process, weightsTransposed);
 
   // Si la entrada original era 3D, remodelamos el gradiente de salida a 3D
   if (inputRank == 3) {

@@ -2,6 +2,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <vector>
+#include "utils/CudaUtils.hpp"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -114,13 +115,17 @@ Tensor Conv2d::backward(const Tensor& outputGradient) {
 
     // --- 3. Calcular gradiente de los pesos (dE/dW) ---
     // dW = dY @ X_im2col^T
-    Tensor dW_flat = matrixMultiply(reshaped_out_grad, im2col_matrix.transpose(0, 1));
+    //Tensor dW_flat = matrixMultiply(reshaped_out_grad, im2col_matrix.transpose(0, 1));
+    Tensor im2col_transposed = im2col_matrix.transpose(0, 1).contiguous();
+    Tensor dW_flat = matrixMultiply_cuda(reshaped_out_grad, im2col_transposed);
     this->weightGradients = dW_flat.reshape(this->weights.getShape());
     
     // --- 4. Calcular gradiente de la entrada (dE/dX) ---
     // dX_col = W^T @ dY
     Tensor reshaped_weights = this->weights.reshape({this->out_channels, patch_dim});
-    Tensor dX_col = matrixMultiply(reshaped_weights.transpose(0, 1), reshaped_out_grad);
+    //Tensor dX_col = matrixMultiply(reshaped_weights.transpose(0, 1), reshaped_out_grad);
+    Tensor weights_transposed = reshaped_weights.transpose(0, 1).contiguous();
+    Tensor dX_col = matrixMultiply_cuda(weights_transposed, reshaped_out_grad);
 
     Tensor input_gradient(in_shape);
     col2im(dX_col, input_gradient, this->kernel_size, this->stride, this->padding);
