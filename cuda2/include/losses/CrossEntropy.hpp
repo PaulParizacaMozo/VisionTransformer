@@ -18,7 +18,8 @@ Tensor softmax(const Tensor &logits);
  * La magia de esta combinación reside en el cálculo del gradiente, que se
  * simplifica a una simple resta: `(softmax_output - true_labels)`.
  */
-class CrossEntropy : public Loss {
+class CrossEntropy : public Loss
+{
 public:
   /** @brief Constructor por defecto. */
   CrossEntropy() = default;

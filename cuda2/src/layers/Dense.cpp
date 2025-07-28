@@ -29,45 +29,45 @@ Tensor Dense::forward(const Tensor &input, bool isTraining)
   {
     this->inputTensor = input; // Guardamos la entrada con su forma original
   }
-  std::cout << "--Forward pass de Dense..." << std::endl;
+  // std::cout << "--Forward pass de Dense..." << std::endl;
   const auto &inputShape = input.getShape();
   size_t inputRank = inputShape.size();
 
   // Si la entrada es 3D, la aplanamos temporalmente a 2D para la multiplicación
   if (inputRank == 3)
   {
-    std::cout << "Entrada 3D detectada. Aplanando a 2D..." << std::endl;
+    // std::cout << "Entrada 3D detectada. Aplanando a 2D..." << std::endl;
     size_t batchSize = inputShape[0];
     size_t numTokens = inputShape[1];
     size_t featuresIn = inputShape[2];
-    input.printFirstRow("Input 3D original");
+    // input.printFirstRow("Input 3D original");
     Tensor input2D = input.reshape({batchSize * numTokens, featuresIn});
-    input2D.printFirstRow("Input 2D");
+    // input2D.printFirstRow("Input 2D");
     // Y' = X_2D * W
     Tensor output2D = matrixMultiply(input2D, this->weights);
-    output2D.printFirstRow("Output 2D");
+    // output2D.printFirstRow("Output 2D");
     // Y = Y' + b
     output2D.addBroadcast(this->bias);
-    output2D.printFirstRow("Output 2D con bias");
+    // // output2D.printFirstRow("Output 2D con bias");
 
     // Devolvemos la salida con su forma 3D original
-    Tensor out = output2D.reshape({batchSize, numTokens, this->bias.getShape()[1]}, true);
-    int num = rand() % 1000;
-    out.printFirstRow("Output 3D_" + std::to_string(num));
+    Tensor out = output2D.reshape({batchSize, numTokens, this->bias.getShape()[1]});
+    // int num = rand() % 1000;
+    // out.printFirstRow("Output 3D_" + std::to_string(num));
     // nombre unico para el archivo con rand entre 1 y 1000
 
-    out.printData("Output 3D completo" + std::string("_") + std::to_string(num));
+    // out.printData("Output 3D completo" + std::string("_") + std::to_string(num));
     return out;
   }
 
   // Si la entrada ya es 2D, procedemos como antes
   if (inputRank == 2)
   {
-    std::cout << "Entrada 2D detectada. Procesando directamente..." << std::endl;
+    // std::cout << "Entrada 2D detectada. Procesando directamente..." << std::endl;
     Tensor output = matrixMultiply(input, this->weights);
-    output.printFirstRow("Output 2D");
+    // output.printFirstRow("Output 2D");
     output.addBroadcast(this->bias);
-    output.printFirstRow("Output 2D con bias");
+    // output.printFirstRow("Output 2D con bias");
     return output;
   }
 

@@ -19,21 +19,21 @@ Tensor TransformerEncoderBlock::forward(const Tensor &input, bool isTraining)
     // Guardamos la entrada para la primera conexión residual en el backward pass
     this->input_skip1 = input;
   }
-  std::cout << "--Forward pass del TransformerEncoderBlock..." << std::endl;
+  // std::cout << "--Forward pass del TransformerEncoderBlock..." << std::endl;
 
   // Sub-capa 1: Multi-Head Attention
   Tensor x = norm1.forward(input, isTraining);
-  x.printFirstRow("Normalización de entrada");
-  std::cout << "Normalización de entrada aplicada. Shape: " << x.shapeToString() << std::endl;
+  // x.printFirstRow("Normalización de entrada");
+  // std::cout << "Normalización de entrada aplicada. Shape: " << x.shapeToString() << std::endl;
   x = attention.forward(x, isTraining);
-  x.printFirstRow("Multi-Head Attention");
-  std::cout << "Multi-Head Attention calculada. Shape: " << x.shapeToString() << std::endl;
+  // x.printFirstRow("Multi-Head Attention");
+  // std::cout << "Multi-Head Attention calculada. Shape: " << x.shapeToString() << std::endl;
   x = attention_dropout.forward(x, isTraining);
-  x.printFirstRow("Dropout de atención");
-  std::cout << "Dropout de atención aplicado. Shape: " << x.shapeToString() << std::endl;
+  // x.printFirstRow("Dropout de atención");
+  // std::cout << "Dropout de atención aplicado. Shape: " << x.shapeToString() << std::endl;
   Tensor residual1 = input + x;
-  residual1.printFirstRow("Conexión residual 1");
-  std::cout << "Conexión residual 1 aplicada. Shape: " << residual1.shapeToString() << std::endl;
+  // residual1.printFirstRow("Conexión residual 1");
+  // std::cout << "Conexión residual 1 aplicada. Shape: " << residual1.shapeToString() << std::endl;
 
   if (isTraining)
   {
@@ -43,11 +43,11 @@ Tensor TransformerEncoderBlock::forward(const Tensor &input, bool isTraining)
 
   // Sub-capa 2: Feed-Forward Network
   Tensor y = norm2.forward(residual1, isTraining);
-  y.printFirstRow("Normalización de salida de MHA");
-  std::cout << "Normalización de la salida de MHA aplicada. Shape: " << y.shapeToString() << std::endl;
+  // y.printFirstRow("Normalización de salida de MHA");
+  // std::cout << "Normalización de la salida de MHA aplicada. Shape: " << y.shapeToString() << std::endl;
   y = ffn.forward(y, isTraining);
-  y.printFirstRow("Feed-Forward Network");
-  std::cout << "Red Feed-Forward calculada. Shape: " << y.shapeToString() << std::endl;
+  // y.printFirstRow("Feed-Forward Network");
+  // std::cout << "Red Feed-Forward calculada. Shape: " << y.shapeToString() << std::endl;
   return residual1 + y;
 }
 

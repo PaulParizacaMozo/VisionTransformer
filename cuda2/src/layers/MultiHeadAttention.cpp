@@ -34,19 +34,19 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
   const auto &s = input.getShape(); // {B, N, D}
   size_t B = s[0], N = s[1];
   // std::cout << "Tamaño del batch: " << B << ", Número de tokens: " << N << ", Dimensión de embedding: " << this->embedding_dim << std::endl;
-  input.printFirstRow("MHA::Input original");
+  // input.printFirstRow("MHA::Input original");
 
   // 1. Proyecciones Lineales
   Tensor q = q_proj->forward(input, isTraining); // -> {B, N, D}
   Tensor k = k_proj->forward(input, isTraining); // -> {B, N, D}
   Tensor v = v_proj->forward(input, isTraining); // -> {B, N, D}
-  std::cout << "Proyecciones lineales completadas. Formas:\n- "
-            << "q: " << q.shapeToString() << "\n- "
-            << "k: " << k.shapeToString() << "\n- "
-            << "v: " << v.shapeToString() << std::endl;
-  q.printFirstRow("q");
-  k.printFirstRow("k");
-  v.printFirstRow("v");
+  // std::cout << "Proyecciones lineales completadas. Formas:\n- "
+  //           << "q: " << q.shapeToString() << "\n- "
+  //           << "k: " << k.shapeToString() << "\n- "
+  //           << "v: " << v.shapeToString() << std::endl;
+  // q.printFirstRow("q");
+  // k.printFirstRow("k");
+  // v.printFirstRow("v");
   // 2. Dividir en cabezas
   // La maniobra estándar: reshape a 4D -> transpose -> reshape a 3D para BMM
 
@@ -82,13 +82,13 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
   q = q.reshape({B * this->num_heads, N, this->head_dim});
   k = k.reshape({B * this->num_heads, N, this->head_dim});
   v = v.reshape({B * this->num_heads, N, this->head_dim});
-  std::cout << "Reensamblaje de cabezas completado. Formas:\n- "
-            << "q: " << q.shapeToString() << "\n- "
-            << "k: " << k.shapeToString() << "\n- "
-            << "v: " << v.shapeToString() << std::endl;
-  q.printFirstRow("q reensamblado");
-  k.printFirstRow("k reensamblado");
-  v.printFirstRow("v reensamblado");
+  // std::cout << "Reensamblaje de cabezas completado. Formas:\n- "
+  //           << "q: " << q.shapeToString() << "\n- "
+  //           << "k: " << k.shapeToString() << "\n- "
+  //           << "v: " << v.shapeToString() << std::endl;
+  // q.printFirstRow("q reensamblado");
+  // k.printFirstRow("k reensamblado");
+  // v.printFirstRow("v reensamblado");
 
   if (isTraining)
   {
@@ -99,27 +99,27 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
 
   // 3. Atención Escalada por Producto Punto
   Tensor context = scaledDotProductAttention(q, k, v); // -> {B*h, N, d_h}
-  std::cout << "Atención escalada por producto punto completada. Forma de context: " << context.shapeToString() << std::endl;
-  context.printFirstRow("Contexto de atención");
+  // std::cout << "Atención escalada por producto punto completada. Forma de context: " << context.shapeToString() << std::endl;
+  // context.printFirstRow("Contexto de atención");
   // 4. Re-ensamblar cabezas
   // Invertimos el proceso de división
   // {B*h, N, d_h} -> {B, h, N, d_h}
   context = context.reshape({B, this->num_heads, N, this->head_dim});
-  context.printFirstRow("Contexto reensamblado");
+  // context.printFirstRow("Contexto reensamblado");
   // {B, h, N, d_h} -> {B, N, h, d_h}
   context = context.transpose(1, 2); // <- ¡Esta operación crea la vista no contigua!
-  context.printFirstRow("Contexto transpuesto");
+  // context.printFirstRow("Contexto transpuesto");
   // --- LA SOLUCIÓN AL ERROR ---
   // Antes del reshape final, hacemos que el tensor sea contiguo en memoria.
   context = context.contiguous();
-  context.printFirstRow("Contexto contiguo");
+  // context.printFirstRow("Contexto contiguo");
 
   // Ahora este reshape es seguro.
   // {B, N, h, d_h} -> {B, N, D}
   context = context.reshape({B, N, this->embedding_dim});
 
   // 5. Proyección de salida final
-  context.printFirstRow("Contexto antes de la proyección final");
+  // context.printFirstRow("Contexto antes de la proyección final");
   return out_proj->forward(context, isTraining);
 }
 
@@ -128,22 +128,22 @@ Tensor MultiHeadAttention::scaledDotProductAttention(const Tensor &q, const Tens
   // k_transposed -> {B*h, d_h, N}
   // std::cout << "Transponiendo k para la multiplicación de matrices..." << std::endl;
   Tensor k_transposed = k.transpose(1, 2);
-  std::cout << "k transpuesto. Forma: " << k_transposed.shapeToString() << std::endl;
-  k.printFirstRow("k transpuesto");
+  // std::cout << "k transpuesto. Forma: " << k_transposed.shapeToString() << std::endl;
+  // k.printFirstRow("k transpuesto");
   // scores -> {B*h, N, N}
   Tensor scores = batchMatrixMultiply(q, k_transposed);
-  std::cout << "Multiplicación de matrices completada. Forma de scores: " << scores.shapeToString() << std::endl;
-  scores.printFirstRow("Scores de atención");
+  // std::cout << "Multiplicación de matrices completada. Forma de scores: " << scores.shapeToString() << std::endl;
+  // scores.printFirstRow("Scores de atención");
   float scale_factor = 1.0f / std::sqrt(static_cast<float>(this->head_dim));
-  std::cout << "Factor de escala calculado: " << scale_factor << std::endl;
+  // std::cout << "Factor de escala calculado: " << scale_factor << std::endl;
 
   // Usamos un bucle para la multiplicación por escalar.
   // Una sobrecarga de operador T*s sería ideal en el futuro.
   if (scores.isContiguous())
   {
-    std::cout << "Tensor scores es contiguo. Aplicando escalamiento..." << std::endl;
+    // std::cout << "Tensor scores es contiguo. Aplicando escalamiento..." << std::endl;
     scores.scale(scale_factor);
-    scores.printFirstRow("Scores escalados");
+    // scores.printFirstRow("Scores escalados");
     // float *scores_data = scores.getData();
     // // #pragma omp parallel for
     // for (size_t i = 0; i < scores.getSize(); ++i)
@@ -153,7 +153,7 @@ Tensor MultiHeadAttention::scaledDotProductAttention(const Tensor &q, const Tens
   }
   else
   {
-    std::cout << "Tensor scores no es contiguo. Aplicando escalamiento elemento a elemento..." << std::endl;
+    // std::cout << "Tensor scores no es contiguo. Aplicando escalamiento elemento a elemento..." << std::endl;
     // Fallback para vistas no contiguas
     for (size_t i = 0; i < scores.getShape()[0]; ++i)
       for (size_t j = 0; j < scores.getShape()[1]; ++j)
@@ -163,16 +163,16 @@ Tensor MultiHeadAttention::scaledDotProductAttention(const Tensor &q, const Tens
           scores.set({i, j, l}, current * scale_factor);
         }
   }
-  std::cout << "Escalamiento aplicado a scores. Forma: " << scores.shapeToString() << std::endl;
+  // std::cout << "Escalamiento aplicado a scores. Forma: " << scores.shapeToString() << std::endl;
   Tensor attention = softmax3d(scores);
-  attention.printFirstRow("Atención después de softmax");
-  std::cout << "Softmax aplicado a scores. Forma de atención: " << attention.shapeToString() << std::endl;
+  // attention.printFirstRow("Atención después de softmax");
+  // std::cout << "Softmax aplicado a scores. Forma de atención: " << attention.shapeToString() << std::endl;
   this->attention_weights = attention;
-  std::cout << "Pesos de atención guardados. Forma: " << this->attention_weights.shapeToString() << std::endl;
-  attention_weights.printFirstRow("Pesos de atención guardados");
+  // std::cout << "Pesos de atención guardados. Forma: " << this->attention_weights.shapeToString() << std::endl;
+  // attention_weights.printFirstRow("Pesos de atención guardados");
   auto output = batchMatrixMultiply(attention, v);
-  output.printFirstRow("Output de atención");
-  std::cout << "Multiplicación de matrices de atención y v completada. Forma de output: " << output.shapeToString() << std::endl;
+  // output.printFirstRow("Output de atención");
+  // std::cout << "Multiplicación de matrices de atención y v completada. Forma de output: " << output.shapeToString() << std::endl;
   return output; // -> {B*h, N, d_h}
 }
 

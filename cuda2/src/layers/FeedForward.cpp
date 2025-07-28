@@ -17,19 +17,19 @@ FeedForward::FeedForward(size_t embedding_dim, size_t hidden_dim, float dropout_
  */
 Tensor FeedForward::forward(const Tensor &input, bool isTraining)
 {
-  std::cout << "--Forward pass de FeedForward..." << std::endl;
+  // std::cout << "--Forward pass de FeedForward..." << std::endl;
   Tensor x = dense1.forward(input, isTraining);
-  x.printFirstRow("Capa densa 1");
-  std::cout << "Capa densa 1 aplicada. Forma: " << x.shapeToString() << std::endl;
+  // x.printFirstRow("Capa densa 1");
+  // std::cout << "Capa densa 1 aplicada. Forma: " << x.shapeToString() << std::endl;
   x = activation.forward(x, isTraining);
-  x.printFirstRow("Función de activación");
-  std::cout << "Función de activación aplicada. Forma: " << x.shapeToString() << std::endl;
+  // x.printFirstRow("Función de activación");
+  // std::cout << "Función de activación aplicada. Forma: " << x.shapeToString() << std::endl;
   x = dense2.forward(x, isTraining);
-  x.printFirstRow("Capa densa 2");
-  std::cout << "Capa densa 2 aplicada. Forma: " << x.shapeToString() << std::endl;
+  // x.printFirstRow("Capa densa 2");
+  // std::cout << "Capa densa 2 aplicada. Forma: " << x.shapeToString() << std::endl;
   x = dropout.forward(x, isTraining);
-  x.printFirstRow("Dropout");
-  std::cout << "Dropout aplicado. Forma: " << x.shapeToString() << std::endl;
+  // x.printFirstRow("Dropout");
+  // std::cout << "Dropout aplicado. Forma: " << x.shapeToString() << std::endl;
   return x;
 }
 

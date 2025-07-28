@@ -79,10 +79,10 @@ Tensor::Tensor(const std::vector<float> &ptr,
         throw std::out_of_range("Offset + totalSize excede el tamaño del vector original.");
     }
 
-    std::cout << "Tensor::Tensor: Copiando " << totalSize << " elementos desde offset " << offset << std::endl;
+    // std::cout << "Tensor::Tensor: Copiando " << totalSize << " elementos desde offset " << offset << std::endl;
 
     // Reservar en GPU
-    std::cout << "[DEBUG] Reservando " << (totalSize * sizeof(float)) / (1024.0 * 1024.0) << " MB" << std::endl;
+    // std::cout << "[DEBUG] Reservando " << (totalSize * sizeof(float)) / (1024.0 * 1024.0) << " MB" << std::endl;
 
     cudaError_t allocErr = cudaMalloc(&data, totalSize * sizeof(float));
     if (allocErr != cudaSuccess)
@@ -272,15 +272,15 @@ Tensor Tensor::reshape(const std::vector<size_t> &newShape, bool print) const
     if (print)
     {
         // mostrar primeros 10 elementos de dataPtr
-        std::cout << "Tensor::reshape: dataPtr (" << dataPtr.size() << ") = ";
+        // std::cout << "Tensor::reshape: dataPtr (" << dataPtr.size() << ") = ";
         for (size_t i = 0; i < std::min(dataPtr.size(), size_t(10)); ++i)
         {
             std::cout << dataPtr[i] << " ";
         }
         std::cout << std::endl;
     }
-    Tensor out(dataPtr, newShape, strides, dataOffset);
-    out.printFirstRow("Tensor::reshape out");
+    // Tensor out(dataPtr, newShape, strides, dataOffset);
+    // out.printFirstRow("Tensor::reshape out");
     Tensor tempForStrides(newShape);
     return Tensor(dataPtr, newShape, tempForStrides.getStrides(), this->dataOffset);
 }
@@ -771,8 +771,8 @@ __global__ void batchMatMulKernel(
 
 Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b)
 {
-    a.printFirstRow("Tensor A");
-    b.printFirstRow("Tensor B");
+    // a.printFirstRow("Tensor A");
+    // b.printFirstRow("Tensor B");
     const auto &aShape = a.getShape();
     const auto &bShape = b.getShape();
 
@@ -828,7 +828,7 @@ Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b)
     if (err != cudaSuccess)
         std::cerr << "Kernel execution failed: " << cudaGetErrorString(err) << std::endl;
 
-    out.printFirstRow("Tensor Resultado BMM");
+    // out.printFirstRow("Tensor Resultado BMM");
     return out;
 }
 __global__ void concatenate3d_kernel(

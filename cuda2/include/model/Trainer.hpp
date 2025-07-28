@@ -8,17 +8,19 @@
 #include <memory>
 #include <vector>
 
-struct TrainerConfig {
+struct TrainerConfig
+{
   int epochs = 10;
   size_t batch_size = 64;
   float learning_rate = 0.001f;
   float weight_decay = 0.01f;
 
-  float lr_init       = 3e-4f;  // LR máx después del warm‑up
-  float warmup_frac   = 0.1f;   // 10 % de pasos totales
+  float lr_init = 3e-4f;    // LR máx después del warm‑up
+  float warmup_frac = 0.1f; // 10 % de pasos totales
 };
 
-class Trainer {
+class Trainer
+{
 public:
   // Trainer(const ViTConfig &model_config, const TrainerConfig &train_config);
   Trainer(VisionTransformer &model, const TrainerConfig &train_config);
@@ -53,8 +55,8 @@ private:
   // Configuración
   TrainerConfig config;
 
-  long long global_step   = 0;
-  long long total_steps   = 0;  // se define al empezar train()
+  long long global_step = 0;
+  long long total_steps = 0; // se define al empezar train()
 };
 
 #endif // TRAINER_HPP
