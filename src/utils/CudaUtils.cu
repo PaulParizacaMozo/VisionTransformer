@@ -165,64 +165,27 @@ Tensor batchMatrixMultiply_cuda(const Tensor &a, const Tensor &b)
 }
 
 __global__ void validate_and_sum_axis_kernel(
-    const size_t *shapes, // [num_tensors][rank]
-    size_t num_tensors,
-    size_t rank,
-    size_t axis,
-    const size_t *ref_shape,
-    int *error_flag,
-    size_t *axis_sizes)
+    const size_t *shapes, size_t num_tensors, size_t rank, size_t axis,
+    const size_t *ref_shape, int *error_flag, size_t *axis_sizes)
 {
-    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= num_tensors)
         return;
 
+    const size_t *tensor_shape = shapes + tid * rank;
+
     for (size_t i = 0; i < rank; ++i)
     {
-        size_t val = shapes[tid * rank + i];
-        if (i != axis && val != ref_shape[i])
+        if (i != axis && tensor_shape[i] != ref_shape[i])
         {
             *error_flag = 1;
             return;
         }
     }
 
-    axis_sizes[tid] = shapes[tid * rank + axis];
+    axis_sizes[tid] = tensor_shape[axis];
 }
 
-__global__ void copy_tensor_to_concat_kernel(
-    const float *input, float *output,
-    size_t B, size_t N, size_t D,
-    size_t out_stride_B,
-    size_t out_stride_N,
-    size_t out_stride_D,
-    size_t offset_axis,
-    size_t axis)
-{
-    size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-    size_t total = B * N * D;
-    if (tid >= total)
-        return;
-
-    size_t i = tid / (N * D);
-    size_t j = (tid / D) % N;
-    size_t k = tid % D;
-
-    size_t out_i = i, out_j = j, out_k = k;
-
-    if (axis == 0)
-        out_i += offset_axis;
-    else if (axis == 1)
-        out_j += offset_axis;
-    else if (axis == 2)
-        out_k += offset_axis;
-
-    size_t out_idx = out_i * out_stride_B +
-                     out_j * out_stride_N +
-                     out_k * out_stride_D;
-
-    output[out_idx] = input[tid];
-}
 __global__ void copy_tensor_kernel_3d_strided(
     const float *input, float *output,
     size_t B, size_t N, size_t D,
@@ -308,9 +271,7 @@ Tensor concatenate_cuda(const std::vector<Tensor> &tensors, size_t axis)
     CUDA_CHECK(cudaFree(d_axis_sizes));
 
     // --- Crear tensor de resultado ---
-    size_t newDimSize = 0;
-    for (size_t v : axis_sizes_h)
-        newDimSize += v;
+    size_t newDimSize = std::accumulate(axis_sizes_h.begin(), axis_sizes_h.end(), size_t(0));
 
     std::vector<size_t> newShape = refShape;
     newShape[axis] = newDimSize;
@@ -334,8 +295,8 @@ Tensor concatenate_cuda(const std::vector<Tensor> &tensors, size_t axis)
         CUDA_CHECK(cudaMalloc(&d_input, sizeof(float) * input_size));
         CUDA_CHECK(cudaMemcpy(d_input, t.getData(), sizeof(float) * input_size, cudaMemcpyHostToDevice));
 
-        int threads = 256;
-        int blocks = (B * N * D + threads - 1) / threads;
+        threads = 256;
+        blocks = (B * N * D + threads - 1) / threads;
 
         copy_tensor_kernel_3d_strided<<<blocks, threads>>>(
             d_input,
