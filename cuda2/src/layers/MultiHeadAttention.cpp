@@ -99,6 +99,12 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
 
   // 3. Atención Escalada por Producto Punto
   Tensor context = scaledDotProductAttention(q, k, v); // -> {B*h, N, d_h}
+  if (!isTraining)
+  {
+    q.release();
+    k.release();
+    v.release();
+  }
   // std::cout << "Atención escalada por producto punto completada. Forma de context: " << context.shapeToString() << std::endl;
   // context.printFirstRow("Contexto de atención");
   // 4. Re-ensamblar cabezas
@@ -120,7 +126,10 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
 
   // 5. Proyección de salida final
   // context.printFirstRow("Contexto antes de la proyección final");
-  return out_proj->forward(context, isTraining);
+  auto out = out_proj->forward(context, isTraining);
+  if (!isTraining)
+    context.release(); // Liberar memoria del contexto
+  return out;          // -> {B, N, D}
 }
 
 Tensor MultiHeadAttention::scaledDotProductAttention(const Tensor &q, const Tensor &k, const Tensor &v)

@@ -1,6 +1,7 @@
 #include "layers/MultiHeadAttention.hpp"
 #include "core/Tensor.hpp" // Para las funciones libres
 #include <cmath>           // Para std::sqrt
+#include "utils/CudaUtils.hpp"
 
 // Declaración de la función softmax que usaremos
 Tensor softmax(const Tensor &logits, int axis);
@@ -75,7 +76,6 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining) {
   // {B, h, N, d_h} -> {B, N, h, d_h}
   context = context.transpose(1, 2); // <- ¡Esta operación crea la vista no contigua!
 
-  // --- LA SOLUCIÓN AL ERROR ---
   // Antes del reshape final, hacemos que el tensor sea contiguo en memoria.
   context = context.contiguous();
 
@@ -183,11 +183,15 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient) {
   // 3. Inversa de la Multiplicación Final de la Atención
   // ----------------------------------------------------------------------
   // FORWARD: attention_output = attention_weights @ V
-  Tensor V_T = this->v_split.transpose(1, 2);
-  Tensor d_attention_weights = batchMatrixMultiply(grad, V_T);
+  //Tensor V_T = this->v_split.transpose(1, 2);
+  //Tensor d_attention_weights = batchMatrixMultiply(grad, V_T);
+  Tensor V_T_contiguous = this->v_split.transpose(1, 2).contiguous();
+  Tensor d_attention_weights = batchMatrixMultiply_cuda(grad, V_T_contiguous);
 
-  Tensor attention_weights_T = this->attention_weights.transpose(1, 2);
-  Tensor dV = batchMatrixMultiply(attention_weights_T, grad); // ¡Este ya es un gradiente real!
+  //Tensor attention_weights_T = this->attention_weights.transpose(1, 2);
+  //Tensor dV = batchMatrixMultiply(attention_weights_T, grad);
+  Tensor attention_weights_T_contiguous = this->attention_weights.transpose(1, 2).contiguous();
+  Tensor dV = batchMatrixMultiply_cuda(attention_weights_T_contiguous, grad);
 
   // ----------------------------------------------------------------------
   // 4. Inversa del Softmax
@@ -211,11 +215,14 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient) {
   // 5.2 Propagar a través de Q @ K^T
   // Forward: scores = Q @ K^T
   // dL/dQ = dL/d(scores) @ K
-  Tensor dQ = batchMatrixMultiply(d_scores, this->k_split);
+  //Tensor dQ = batchMatrixMultiply(d_scores, this->k_split);
+  Tensor dQ = batchMatrixMultiply_cuda(d_scores, this->k_split.contiguous());
 
   // dL/dK = Q^T @ dL/d(scores)
-  Tensor Q_T = this->q_split.transpose(1, 2);
-  Tensor dK = batchMatrixMultiply(Q_T, d_scores);
+  //Tensor Q_T = this->q_split.transpose(1, 2);
+  //Tensor dK = batchMatrixMultiply(Q_T, d_scores);
+  Tensor Q_T_contiguous = this->q_split.transpose(1, 2).contiguous();
+  Tensor dK = batchMatrixMultiply_cuda(Q_T_contiguous, d_scores);
 
   // ----------------------------------------------------------------------
   // 6. Inversa de la División de Cabezas (Re-ensamblaje de Gradientes)

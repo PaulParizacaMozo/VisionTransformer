@@ -25,7 +25,7 @@ Tensor PatchEmbedding::forward(const Tensor &input, bool isTraining)
   // std::cout << "--PatchEmbedding::forward--" << std::endl;
   const auto &inputShape = input.getShape();
   size_t batchSize = inputShape[0];
-  // std::cout << "Batch size: " << batchSize << std::endl;
+  std::cout << "Batch size: " << batchSize << std::endl;
 
   // Tensor para almacenar los parches aplanados, listo para la capa Densa.
   // Tensor patches_flat({batchSize * this->num_patches, this->patch_dim});
@@ -72,7 +72,7 @@ Tensor PatchEmbedding::forward(const Tensor &input, bool isTraining)
                                              this->in_channels,
                                              this->num_patches_h,
                                              this->num_patches_w);
-  // std::cout << "Parches aplanados: " << patches_flat.shapeToString() << std::endl;
+  std::cout << "Parches aplanados: " << patches_flat.shapeToString() << std::endl;
 
   if (isTraining)
   {
@@ -81,7 +81,7 @@ Tensor PatchEmbedding::forward(const Tensor &input, bool isTraining)
 
   // Proyección Lineal (sin cambios)
   Tensor projected_patches = this->projectionLayer->forward(patches_flat, isTraining);
-  // std::cout << "Parches proyectados: " << projected_patches.shapeToString() << std::endl;
+  std::cout << "Parches proyectados: " << projected_patches.shapeToString() << std::endl;
   return projected_patches.reshape({batchSize, this->num_patches, this->embedding_dim});
 }
 

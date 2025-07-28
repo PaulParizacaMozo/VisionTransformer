@@ -3,6 +3,7 @@
 
 #include "layers/Dense.hpp" // La usaremos para la proyección lineal
 #include "layers/Layer.hpp"
+#include "layers/Conv2d.hpp"
 #include <memory> // Para std::unique_ptr
 
 /**
@@ -80,10 +81,11 @@ private:
 
   // Usamos composición: la capa PatchEmbedding "contiene" una capa Dense.
   // std::unique_ptr es una buena forma de gestionar su ciclo de vida.
-  std::unique_ptr<Dense> projectionLayer;
+  //std::unique_ptr<Dense> projectionLayer;
+  std::unique_ptr<Conv2d> projectionLayer;
 
   // Tensor para guardar la entrada aplanada y parcheada para el backward pass.
-  Tensor flattenedPatches;
+  // Tensor flattenedPatches;
 };
 
 #endif // PATCHEMBEDDING_HPP

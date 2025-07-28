@@ -51,7 +51,9 @@ int main()
 
     // --- 3. Crear Modelo y Entrenador ---
     VisionTransformer model(model_config);
+    std::cout << "Modelo creado con la configuración especificada." << std::endl;
     Trainer trainer(model, train_config);
+    std::cout << "Entrenador creado con la configuración especificada." << std::endl;
 
     // --- 4. Ejecutar el Entrenamiento y la Evaluación ---
     trainer.train(train_data, valid_data); // test_data

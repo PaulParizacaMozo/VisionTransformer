@@ -77,13 +77,16 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
   const auto &[X_train, y_train] = train_data;
   const auto &[X_test, y_test] = test_data;
 
+  std::cout << "--- Entrenando el modelo ---" << std::endl;
+
   size_t batches_per_epoch =
       (train_data.first.getShape()[0] + config.batch_size - 1) / config.batch_size;
+  std::cout << "Batches por época: " << batches_per_epoch << std::endl;
   total_steps = (long long)batches_per_epoch * config.epochs;
-
+  std::cout << "Total de pasos de entrenamiento: " << total_steps << std::endl;
   for (int epoch = 0; epoch < config.epochs; ++epoch)
   {
-    // std::cout << "\n--- Época " << epoch + 1 << "/" << config.epochs << " --- | ";
+    std::cout << "\n--- Época " << epoch + 1 << "/" << config.epochs << " --- | " << std::endl;
 
     // Ejecutar una época de entrenamiento y obtener sus métricas
     // auto [train_loss, train_acc] = train_epoch(X_train, y_train);

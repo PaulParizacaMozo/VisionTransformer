@@ -33,8 +33,47 @@ Tensor::Tensor() : dataOffset(0), totalSize(0) {}
 Tensor::Tensor(const std::vector<std::size_t> &newShape) : shape(newShape), dataOffset(0)
 {
     totalSize = newShape.empty() ? 0 : std::accumulate(newShape.begin(), newShape.end(), 1, std::multiplies<std::size_t>());
-    cudaMalloc(&data, totalSize * sizeof(float));
-    cudaMemset(data, 0, totalSize * sizeof(float));
+    size_t requestedBytes = totalSize * sizeof(float);
+
+    // Obtener memoria libre y total ANTES de intentar reservar
+    size_t freeMemBefore = 0, totalMemBefore = 0;
+    cudaError_t infoErr = cudaMemGetInfo(&freeMemBefore, &totalMemBefore);
+
+    if (infoErr != cudaSuccess)
+    {
+        std::cerr << "[Tensor shape] cudaMemGetInfo falló antes de cudaMalloc: "
+                  << cudaGetErrorString(infoErr) << std::endl;
+    }
+
+    // Intentar asignar memoria
+    cudaError_t err = cudaMalloc(&data, requestedBytes);
+    if (err != cudaSuccess)
+    {
+        std::ostringstream oss;
+        oss << "[Tensor shape] Fallo en cudaMalloc: " << cudaGetErrorString(err) << "\n";
+        oss << "  -> Bytes solicitados: " << requestedBytes << "\n";
+
+        if (infoErr == cudaSuccess)
+        {
+            oss << "  -> Memoria libre antes: " << freeMemBefore << "\n";
+            oss << "  -> Memoria total:       " << totalMemBefore << "\n";
+        }
+        else
+        {
+            oss << "  -> No se pudo obtener info de memoria antes del fallo.\n";
+        }
+
+        throw std::runtime_error(oss.str());
+    }
+
+    // Rellenar con ceros
+    err = cudaMemset(data, 0, requestedBytes);
+    if (err != cudaSuccess)
+    {
+        cudaFree(data);
+        throw std::runtime_error("[Tensor shape] Fallo en cudaMemset: " + std::string(cudaGetErrorString(err)));
+    }
+
     computeStrides();
 }
 
@@ -162,8 +201,12 @@ void Tensor::fill(float value)
     {
         const int threadsPerBlock = 256;
         const int numBlocks = (totalSize + threadsPerBlock - 1) / threadsPerBlock;
-
         fillKernel<<<numBlocks, threadsPerBlock>>>(data, dataOffset, totalSize, value);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            throw std::runtime_error("Fallo en fillKernel: " + std::string(cudaGetErrorString(err)));
+        }
         cudaDeviceSynchronize();
     }
 }
@@ -193,6 +236,11 @@ void Tensor::randomize(float min, float max)
         unsigned long seed = SeedGenerator::getNextSeed();
 
         randomizeKernel<<<blocks, threads>>>(data + dataOffset, totalSize, min, max, seed);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            throw std::runtime_error("Fallo en randomizeKernel: " + std::string(cudaGetErrorString(err)));
+        }
         cudaDeviceSynchronize();
     }
 }
@@ -226,6 +274,11 @@ void Tensor::randomizeNormal(float mean, float stddev)
         unsigned long seed = SeedGenerator::getNextSeed();
 
         randomizeNormalKernel<<<blocks, threads>>>(data + dataOffset, totalSize, mean, stddev, seed);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            throw std::runtime_error("Fallo en randomizeNormalKernel: " + std::string(cudaGetErrorString(err)));
+        }
         cudaDeviceSynchronize();
     }
 }
@@ -249,8 +302,11 @@ Tensor Tensor::slice(size_t axis, size_t start, size_t count) const
 
     // data de gpu pasarla a cpu
     std::vector<float> dataPtr(totalSize);
-    cudaMemcpy(dataPtr.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
-
+    cudaError_t err = cudaMemcpy(dataPtr.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMemcpy: " + std::string(cudaGetErrorString(err)));
+    }
     Tensor out(dataPtr, newShape, strides, newOffset);
     return out;
 }
@@ -268,7 +324,11 @@ Tensor Tensor::reshape(const std::vector<size_t> &newShape, bool print) const
     }
 
     std::vector<float> dataPtr(totalSize);
-    cudaMemcpy(dataPtr.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError_t err = cudaMemcpy(dataPtr.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMemcpy: " + std::string(cudaGetErrorString(err)));
+    }
     if (print)
     {
         // mostrar primeros 10 elementos de dataPtr
@@ -297,7 +357,11 @@ Tensor Tensor::transpose(size_t dim1, size_t dim2) const
     std::swap(newStrides[dim1], newStrides[dim2]);
 
     std::vector<float> dataPtr(totalSize);
-    cudaMemcpy(dataPtr.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError_t err = cudaMemcpy(dataPtr.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMemcpy: " + std::string(cudaGetErrorString(err)));
+    }
 
     return Tensor(dataPtr, newShape, newStrides, this->dataOffset);
 }
@@ -341,18 +405,46 @@ Tensor Tensor::contiguous() const
     size_t ndim = shape.size();
     size_t *d_shape;
     size_t *d_strides;
-    cudaMalloc(&d_shape, ndim * sizeof(size_t));
-    cudaMemcpy(d_shape, shape.data(), ndim * sizeof(size_t), cudaMemcpyHostToDevice);
+    cudaError_t err = cudaMalloc(&d_shape, ndim * sizeof(size_t));
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMalloc para d_shape: " + std::string(cudaGetErrorString(err)));
+    }
 
-    cudaMalloc(&d_strides, ndim * sizeof(size_t));
-    cudaMemcpy(d_strides, strides.data(), ndim * sizeof(size_t), cudaMemcpyHostToDevice);
+    err = cudaMemcpy(d_shape, shape.data(), ndim * sizeof(size_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_shape);
+        throw std::runtime_error("Fallo en cudaMemcpy para d_shape: " + std::string(cudaGetErrorString(err)));
+    }
+    err = cudaMalloc(&d_strides, ndim * sizeof(size_t));
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_shape);
+        throw std::runtime_error("Fallo en cudaMalloc para d_strides: " + std::string(cudaGetErrorString(err)));
+    }
+
+    err = cudaMemcpy(d_strides, strides.data(), ndim * sizeof(size_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_shape);
+        cudaFree(d_strides);
+        throw std::runtime_error("Fallo en cudaMemcpy para d_strides: " + std::string(cudaGetErrorString(err)));
+    }
+
     int threads = 256;
     int blocks = (totalSize + threads - 1) / threads;
     makeContiguousKernel<<<blocks, threads>>>(
         new_tensor.getData(), this->data,
         d_shape, d_strides,
         ndim, totalSize, dataOffset);
-
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_shape);
+        cudaFree(d_strides);
+        throw std::runtime_error("Fallo en makeContiguousKernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaFree(d_shape);
     cudaFree(d_strides);
     cudaDeviceSynchronize();
@@ -380,7 +472,11 @@ Tensor Tensor::expand(const std::vector<size_t> &newShape) const
     std::vector<float> dataPtr(newTotalSize); // Inicializar todo con ceros
     // std::cout << "Tensor::expand: dataPtr (" << dataPtr.size() << ") " << std::endl;
 
-    cudaMemcpy(dataPtr.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError_t err = cudaMemcpy(dataPtr.data(), data, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMemcpy: " + std::string(cudaGetErrorString(err)));
+    }
     // Intentamos copiar desde GPU si hay suficientes datos válidos desde el offset
     // std::cout << "Tensor::expand: dataPtr (" << dataPtr.size() << ") = ";
     // for (const auto &val : dataPtr)
@@ -482,6 +578,11 @@ Tensor Tensor::operator+(const Tensor &other) const
         addWithOffset_kernel<<<gridSize, blockSize>>>(
             this->data, other.getData(), result.getData(),
             N, this->dataOffset, other.dataOffset);
+    }
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en add kernel: " + std::string(cudaGetErrorString(err)));
     }
     cudaDeviceSynchronize();
     return result;
@@ -591,6 +692,11 @@ Tensor Tensor::sum(size_t axis) const
     {
         throw std::runtime_error("sum() solo está implementado para 2D y 3D por ahora.");
     }
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en sum kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize();
     return result;
 }
@@ -658,6 +764,11 @@ void Tensor::addBroadcast(const Tensor &other)
         throw std::runtime_error("Broadcasting no implementado para estas formas: " + this->shapeToString() + " y " +
                                  other.shapeToString());
     }
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en addBroadcast kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize();
 }
 
@@ -700,7 +811,8 @@ Tensor matrixMultiply(const Tensor &a, const Tensor &b)
 {
     const auto &aShape = a.getShape();
     const auto &bShape = b.getShape();
-
+    std::cout << "Tensor::matrixMultiply: a.shape = " << a.shapeToString()
+              << ", b.shape = " << b.shapeToString() << std::endl;
     if (aShape.size() != 2 || bShape.size() != 2)
     {
         throw std::runtime_error("matrixMultiply solo está implementada para tensores 2D.");
@@ -714,19 +826,59 @@ Tensor matrixMultiply(const Tensor &a, const Tensor &b)
     size_t M = aShape[0];
     size_t N = aShape[1];
     size_t P = bShape[1];
-
+    std::cout << "Tensor::matrixMultiply: M = " << M << ", N = " << N << ", P = " << P << std::endl;
     Tensor out({M, P});
+    std::cout << "Tensor::matrixMultiply: resultado = " << out.shapeToString() << std::endl;
 
     size_t *d_a_strides;
     size_t *d_b_strides;
     size_t *d_out_strides;
-    cudaMalloc(&d_a_strides, 2 * sizeof(size_t));
-    cudaMalloc(&d_b_strides, 2 * sizeof(size_t));
-    cudaMalloc(&d_out_strides, 2 * sizeof(size_t));
-    cudaMemcpy(d_a_strides, a.getStrides().data(), 2 * sizeof(size_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b_strides, b.getStrides().data(), 2 * sizeof(size_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_out_strides, out.getStrides().data(), 2 * sizeof(size_t), cudaMemcpyHostToDevice);
+    cudaError_t err = cudaMalloc(&d_a_strides, 2 * sizeof(size_t));
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("[matrixMultiply] Fallo en cudaMalloc para d_a_strides: " + std::string(cudaGetErrorString(err)));
+    }
+    err = cudaMalloc(&d_b_strides, 2 * sizeof(size_t));
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_a_strides);
+        throw std::runtime_error("[matrixMultiply] Fallo en cudaMalloc para d_b_strides: " + std::string(cudaGetErrorString(err)));
+    }
 
+    err = cudaMalloc(&d_out_strides, 2 * sizeof(size_t));
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_a_strides);
+        cudaFree(d_b_strides);
+        throw std::runtime_error("[matrixMultiply] Fallo en cudaMalloc para d_out_strides: " + std::string(cudaGetErrorString(err)));
+    }
+
+    err = cudaMemcpy(d_a_strides, a.getStrides().data(), 2 * sizeof(size_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_a_strides);
+        cudaFree(d_b_strides);
+        cudaFree(d_out_strides);
+        throw std::runtime_error("[matrixMultiply] Fallo en cudaMemcpy para d_a_strides: " + std::string(cudaGetErrorString(err)));
+    }
+
+    err = cudaMemcpy(d_b_strides, b.getStrides().data(), 2 * sizeof(size_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_a_strides);
+        cudaFree(d_b_strides);
+        cudaFree(d_out_strides);
+        throw std::runtime_error("[matrixMultiply] Fallo en cudaMemcpy para d_b_strides: " + std::string(cudaGetErrorString(err)));
+    }
+
+    err = cudaMemcpy(d_out_strides, out.getStrides().data(), 2 * sizeof(size_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_a_strides);
+        cudaFree(d_b_strides);
+        cudaFree(d_out_strides);
+        throw std::runtime_error("[matrixMultiply] Fallo en cudaMemcpy para d_out_strides: " + std::string(cudaGetErrorString(err)));
+    }
     dim3 block(16, 16);
     dim3 grid((P + block.x - 1) / block.x, (M + block.y - 1) / block.y);
 
@@ -735,11 +887,20 @@ Tensor matrixMultiply(const Tensor &a, const Tensor &b)
         b.getData(), d_b_strides, b.getDataOffset(),
         out.getData(), d_out_strides, out.getDataOffset(),
         M, N, P);
-
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_a_strides);
+        cudaFree(d_b_strides);
+        cudaFree(d_out_strides);
+        throw std::runtime_error("[matrixMultiply] Fallo en matrixMultiplyKernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaFree(d_a_strides);
     cudaFree(d_b_strides);
     cudaFree(d_out_strides);
     cudaDeviceSynchronize(); // Opcional para depuración
+    std::cout << "Tensor::matrixMultiply: resultado = " << out.shapeToString() << std::endl;
+
     return out;
 }
 __global__ void batchMatMulKernel(
@@ -791,44 +952,83 @@ Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b)
     size_t B = aShape[0] /*batchSize*/, M = aShape[1], N = aShape[2], P = bShape[2];
     Tensor out({B, M, P});
 
-    size_t *d_a_shape, *d_a_strides, *d_b_shape,
-        *d_b_strides, *d_out_shape, *d_out_strides;
-    cudaMalloc(&d_a_shape, aShape.size() * sizeof(size_t));
-    cudaMalloc(&d_a_strides, a.getStrides().size() * sizeof(size_t));
-    cudaMalloc(&d_b_shape, bShape.size() * sizeof(size_t));
-    cudaMalloc(&d_b_strides, b.getStrides().size() * sizeof(size_t));
-    cudaMalloc(&d_out_shape, out.getShape().size() * sizeof(size_t));
-    cudaMalloc(&d_out_strides, out.getStrides().size() * sizeof(size_t));
+    size_t *d_a_shape = nullptr, *d_a_strides = nullptr, *d_b_shape = nullptr;
+    size_t *d_b_strides = nullptr, *d_out_shape = nullptr, *d_out_strides = nullptr;
 
-    cudaMemcpy(d_a_shape, aShape.data(), aShape.size() * sizeof(size_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_a_strides, a.getStrides().data(), a.getStrides().size() * sizeof(size_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b_shape, bShape.data(), bShape.size() * sizeof(size_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b_strides, b.getStrides().data(), b.getStrides().size() * sizeof(size_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_out_shape, out.getShape().data(), out.getShape().size() * sizeof(size_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_out_strides, out.getStrides().data(), out.getStrides().size() * sizeof(size_t), cudaMemcpyHostToDevice);
+    auto safeCudaMalloc = [](void **ptr, size_t size, const std::string &name)
+    {
+        cudaError_t err = cudaMalloc(ptr, size);
+        if (err != cudaSuccess)
+        {
+            throw std::runtime_error("cudaMalloc failed for " + name + ": " + std::string(cudaGetErrorString(err)));
+        }
+    };
+
+    auto safeCudaMemcpy = [](void *dst, const void *src, size_t size, cudaMemcpyKind kind, const std::string &name)
+    {
+        cudaError_t err = cudaMemcpy(dst, src, size, kind);
+        if (err != cudaSuccess)
+        {
+            throw std::runtime_error("cudaMemcpy failed for " + name + ": " + std::string(cudaGetErrorString(err)));
+        }
+    };
+
+    // Malloc con validación
+    safeCudaMalloc((void **)&d_a_shape, aShape.size() * sizeof(size_t), "d_a_shape");
+    safeCudaMalloc((void **)&d_a_strides, a.getStrides().size() * sizeof(size_t), "d_a_strides");
+    safeCudaMalloc((void **)&d_b_shape, bShape.size() * sizeof(size_t), "d_b_shape");
+    safeCudaMalloc((void **)&d_b_strides, b.getStrides().size() * sizeof(size_t), "d_b_strides");
+    safeCudaMalloc((void **)&d_out_shape, out.getShape().size() * sizeof(size_t), "d_out_shape");
+    safeCudaMalloc((void **)&d_out_strides, out.getStrides().size() * sizeof(size_t), "d_out_strides");
+
+    // Memcpy con validación
+    safeCudaMemcpy(d_a_shape, aShape.data(), aShape.size() * sizeof(size_t), cudaMemcpyHostToDevice, "d_a_shape");
+    safeCudaMemcpy(d_a_strides, a.getStrides().data(), a.getStrides().size() * sizeof(size_t), cudaMemcpyHostToDevice, "d_a_strides");
+    safeCudaMemcpy(d_b_shape, bShape.data(), bShape.size() * sizeof(size_t), cudaMemcpyHostToDevice, "d_b_shape");
+    safeCudaMemcpy(d_b_strides, b.getStrides().data(), b.getStrides().size() * sizeof(size_t), cudaMemcpyHostToDevice, "d_b_strides");
+    safeCudaMemcpy(d_out_shape, out.getShape().data(), out.getShape().size() * sizeof(size_t), cudaMemcpyHostToDevice, "d_out_shape");
+    safeCudaMemcpy(d_out_strides, out.getStrides().data(), out.getStrides().size() * sizeof(size_t), cudaMemcpyHostToDevice, "d_out_strides");
 
     // Lanzar kernel
     dim3 threadsPerBlock(16, 16);
     dim3 numBlocks((P + 15) / 16, (M + 15) / 16);
-    cudaError_t err = cudaGetLastError();
+
     batchMatMulKernel<<<numBlocks, threadsPerBlock>>>(
         a.getData(), d_a_strides, a.getDataOffset(),
         b.getData(), d_b_strides, b.getDataOffset(),
         out.getData(), d_out_strides, out.getDataOffset(),
         B, M, N, P);
 
-    cudaDeviceSynchronize();
-    cudaFree(d_a_shape);
-    cudaFree(d_a_strides);
-    cudaFree(d_b_shape);
-    cudaFree(d_b_strides);
-    cudaFree(d_out_shape);
-    cudaFree(d_out_strides);
-    err = cudaGetLastError();
+    cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
-        std::cerr << "Kernel execution failed: " << cudaGetErrorString(err) << std::endl;
+    {
+        throw std::runtime_error("Kernel execution failed: " + std::string(cudaGetErrorString(err)));
+    }
 
-    // out.printFirstRow("Tensor Resultado BMM");
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("cudaDeviceSynchronize failed: " + std::string(cudaGetErrorString(err)));
+    }
+
+// Liberar memoria con validación (opcionalmente puedes usar un macro o función)
+#define SAFE_CUDA_FREE(ptr)                                                                \
+    if (ptr)                                                                               \
+    {                                                                                      \
+        cudaError_t free_err = cudaFree(ptr);                                              \
+        if (free_err != cudaSuccess)                                                       \
+        {                                                                                  \
+            std::cerr << "cudaFree failed: " << cudaGetErrorString(free_err) << std::endl; \
+        }                                                                                  \
+    }
+
+    SAFE_CUDA_FREE(d_a_shape);
+    SAFE_CUDA_FREE(d_a_strides);
+    SAFE_CUDA_FREE(d_b_shape);
+    SAFE_CUDA_FREE(d_b_strides);
+    SAFE_CUDA_FREE(d_out_shape);
+    SAFE_CUDA_FREE(d_out_strides);
+
     return out;
 }
 __global__ void concatenate3d_kernel(
@@ -899,6 +1099,7 @@ Tensor concatenate(const std::vector<Tensor> &tensors, size_t axis)
     newShape[axis] = newDimSize;
     Tensor result(newShape);
 
+    cudaError_t err;
     // 3. Copiar los datos de cada tensor en la sección correcta del resultado
     size_t offset = 0;
     for (const auto &t : tensors)
@@ -916,6 +1117,11 @@ Tensor concatenate(const std::vector<Tensor> &tensors, size_t axis)
             result.getShape()[1], result.getShape()[2],
             offset,
             axis);
+        err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            throw std::runtime_error("Fallo en concatenate3d_kernel: " + std::string(cudaGetErrorString(err)));
+        }
 
         cudaDeviceSynchronize(); // Opcional para detectar errores
         offset += t.getShape()[axis];
@@ -939,7 +1145,12 @@ Tensor expand(const Tensor &tensor, size_t dim, size_t size)
 
     size_t cpuTotalSize = tensor.getSize();
     std::vector<float> dataPtr(cpuTotalSize);
-    cudaMemcpy(dataPtr.data(), tensor.getData(), cpuTotalSize * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaError_t err = cudaMemcpy(dataPtr.data(), tensor.getData(), cpuTotalSize * sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMemcpy en expand: " + std::string(cudaGetErrorString(err)));
+    }
 
     return Tensor(dataPtr, newShape, newStrides, tensor.getDataOffset());
 }
@@ -964,6 +1175,12 @@ void Tensor::relu2d_forward(const Tensor &input)
     dim3 blockDim(256);
     dim3 gridDim((total + blockDim.x - 1) / blockDim.x);
     relu2d_kernel<<<gridDim, blockDim>>>(input.getData(), this->data, rows, cols);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en relu2d_kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize(); // si desea asegurarse de que termine
 }
 
@@ -988,6 +1205,12 @@ void Tensor::relu3d_forward(const Tensor &input)
     dim3 blockDim(256);
     dim3 gridDim((total + blockDim.x - 1) / blockDim.x);
     relu3d_kernel<<<gridDim, blockDim>>>(input.getData(), this->data, d1, d2, d3);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en relu3d_kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize();
 }
 
@@ -1014,6 +1237,13 @@ void Tensor::relu2d_backward(const Tensor &input, const Tensor &grad_output)
     relu2d_backward_kernel<<<gridDim, blockDim>>>(
         input.getData(), grad_output.getData(), this->data,
         rows, cols);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en relu2d_backward_kernel: " + std::string(cudaGetErrorString(err)));
+    }
+
     cudaDeviceSynchronize();
 }
 
@@ -1041,6 +1271,11 @@ void Tensor::relu3d_backward(const Tensor &input, const Tensor &grad_output)
     relu3d_backward_kernel<<<gridDim, blockDim>>>(
         input.getData(), grad_output.getData(), this->data,
         d1, d2, d3);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en relu3d_backward_kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize();
 }
 
@@ -1077,10 +1312,31 @@ void Tensor::embedding_backward(const Tensor &view)
     size_t *d_shape = nullptr;
     size_t *d_strides = nullptr;
 
-    cudaMalloc(&d_shape, shape.size() * sizeof(size_t));
-    cudaMalloc(&d_strides, strides.size() * sizeof(size_t));
-    cudaMemcpy(d_shape, shape.data(), shape.size() * sizeof(size_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_strides, strides.data(), strides.size() * sizeof(size_t), cudaMemcpyHostToDevice);
+    cudaError_t err = cudaMalloc(&d_shape, shape.size() * sizeof(size_t));
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMalloc para d_shape: " + std::string(cudaGetErrorString(err)));
+    }
+    err = cudaMalloc(&d_strides, strides.size() * sizeof(size_t));
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_shape);
+        throw std::runtime_error("Fallo en cudaMalloc para d_strides: " + std::string(cudaGetErrorString(err)));
+    }
+    err = cudaMemcpy(d_shape, shape.data(), shape.size() * sizeof(size_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_shape);
+        cudaFree(d_strides);
+        throw std::runtime_error("Fallo en cudaMemcpy para d_shape: " + std::string(cudaGetErrorString(err)));
+    }
+    err = cudaMemcpy(d_strides, strides.data(), strides.size() * sizeof(size_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_shape);
+        cudaFree(d_strides);
+        throw std::runtime_error("Fallo en cudaMemcpy para d_strides: " + std::string(cudaGetErrorString(err)));
+    }
 
     int threads = 256;
     int blocks = (totalSize + threads - 1) / threads;
@@ -1091,7 +1347,13 @@ void Tensor::embedding_backward(const Tensor &view)
         d_shape,
         d_strides,
         totalSize);
-
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_shape);
+        cudaFree(d_strides);
+        throw std::runtime_error("Fallo en copy_view_to_contiguous_kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize(); // solo si estás depurando
 
     // Liberar memoria temporal
@@ -1127,14 +1389,27 @@ std::vector<int> Tensor::argmaxPerRow() const
     int blocks = (rows + threads - 1) / threads;
 
     int *d_output;
-    cudaMalloc(&d_output, rows * sizeof(int));
-
+    cudaError_t err = cudaMalloc(&d_output, rows * sizeof(int));
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("[argmaxPerRow] Fallo en cudaMalloc para d_output: " + std::string(cudaGetErrorString(err)));
+    }
     argmaxPerRowKernel<<<blocks, threads>>>(data, d_output, rows, cols);
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_output);
+        throw std::runtime_error("[argmaxPerRow] Fallo en argmaxPerRowKernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize();
 
     std::vector<int> h_output(rows);
-    cudaMemcpy(h_output.data(), d_output, rows * sizeof(int), cudaMemcpyDeviceToHost);
-
+    err = cudaMemcpy(h_output.data(), d_output, rows * sizeof(int), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_output);
+        throw std::runtime_error("[argmaxPerRow] Fallo en cudaMemcpy para h_output: " + std::string(cudaGetErrorString(err)));
+    }
     cudaFree(d_output);
     return h_output;
 }
@@ -1165,14 +1440,28 @@ std::vector<int> Tensor::argmaxOneHot() const
     int blocks = (rows + threads - 1) / threads;
 
     int *d_output;
-    cudaMalloc(&d_output, rows * sizeof(int));
+    cudaError_t err = cudaMalloc(&d_output, rows * sizeof(int));
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("[argmaxOneHot] Fallo en cudaMalloc para d_output: " + std::string(cudaGetErrorString(err)));
+    }
 
     argmaxOneHotKernel<<<blocks, threads>>>(data, d_output, rows, cols);
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_output);
+        throw std::runtime_error("[argmaxOneHot] Fallo en argmaxOneHotKernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize();
 
     std::vector<int> h_output(rows);
-    cudaMemcpy(h_output.data(), d_output, rows * sizeof(int), cudaMemcpyDeviceToHost);
-
+    err = cudaMemcpy(h_output.data(), d_output, rows * sizeof(int), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_output);
+        throw std::runtime_error("[argmaxOneHot] Fallo en cudaMemcpy para h_output: " + std::string(cudaGetErrorString(err)));
+    }
     cudaFree(d_output);
     return h_output;
 }
@@ -1187,7 +1476,11 @@ std::pair<int, float> Tensor::argmaxWithProb() const
     size_t num_classes = shape[1];
 
     std::vector<float> host_probs(num_classes);
-    cudaMemcpy(host_probs.data(), data + dataOffset, num_classes * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError_t err = cudaMemcpy(host_probs.data(), data + dataOffset, num_classes * sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMemcpy en argmaxWithProb: " + std::string(cudaGetErrorString(err)));
+    }
 
     int argmax = 0;
     float max_val = host_probs[0];
@@ -1213,7 +1506,11 @@ float Tensor::get(const std::vector<size_t> &indices) const
         flat_index += indices[i] * strides[i];
 
     float value;
-    cudaMemcpy(&value, data + flat_index, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError_t err = cudaMemcpy(&value, data + flat_index, sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMemcpy en get: " + std::string(cudaGetErrorString(err)));
+    }
     return value;
 }
 void Tensor::set(const std::vector<size_t> &indices, float value)
@@ -1225,7 +1522,11 @@ void Tensor::set(const std::vector<size_t> &indices, float value)
     for (size_t i = 0; i < shape.size(); ++i)
         flat_index += indices[i] * strides[i];
 
-    cudaMemcpy(data + flat_index, &value, sizeof(float), cudaMemcpyHostToDevice);
+    cudaError_t err = cudaMemcpy(data + flat_index, &value, sizeof(float), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMemcpy en set: " + std::string(cudaGetErrorString(err)));
+    }
 }
 __global__ void softmax_kernel(const float *logits, float *output, size_t batchSize, size_t numClasses)
 {
@@ -1284,6 +1585,11 @@ Tensor softmax(const Tensor &logits)
 
     softmax_kernel<<<blocks, threads>>>(
         logits.getData(), output.getData(), batchSize, numClasses);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en softmax_kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize(); // opcional para depuración
 
     return output;
@@ -1316,7 +1622,11 @@ float Tensor::cross_entropy_forward(const Tensor &softmax, const Tensor &yTrue)
     size_t numClasses = softmax.getShape()[1];
 
     float *d_lossPerSample;
-    cudaMalloc(&d_lossPerSample, batchSize * sizeof(float));
+    cudaError_t err = cudaMalloc(&d_lossPerSample, batchSize * sizeof(float));
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMalloc para d_lossPerSample: " + std::string(cudaGetErrorString(err)));
+    }
 
     int threads = 256;
     int blocks = (batchSize + threads - 1) / threads;
@@ -1327,12 +1637,21 @@ float Tensor::cross_entropy_forward(const Tensor &softmax, const Tensor &yTrue)
         d_lossPerSample,
         batchSize,
         numClasses);
-
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_lossPerSample);
+        throw std::runtime_error("Fallo en crossEntropyForwardKernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize();
 
     std::vector<float> h_loss(batchSize);
-    cudaMemcpy(h_loss.data(), d_lossPerSample, batchSize * sizeof(float), cudaMemcpyDeviceToHost);
-
+    err = cudaMemcpy(h_loss.data(), d_lossPerSample, batchSize * sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        cudaFree(d_lossPerSample);
+        throw std::runtime_error("Fallo en cudaMemcpy para h_loss: " + std::string(cudaGetErrorString(err)));
+    }
     cudaFree(d_lossPerSample);
 
     float totalLoss = 0.0f;
@@ -1358,7 +1677,11 @@ __global__ void cross_entropy_backward_kernel(float *grad, const float *yTrue, s
 Tensor Tensor::clone() const
 {
     Tensor result(this->shape); // Usa el constructor para alocar memoria y calcular strides
-    cudaMemcpy(result.getData(), this->data, this->totalSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    cudaError_t err = cudaMemcpy(result.getData(), this->data, this->totalSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMemcpy en clone: " + std::string(cudaGetErrorString(err)));
+    }
     return result;
 }
 
@@ -1380,6 +1703,11 @@ Tensor Tensor::crossEntropyBackward(const Tensor &yTrue) const
     const int blocks = (totalSize + threads - 1) / threads;
 
     cross_entropy_backward_kernel<<<blocks, threads>>>(grad.getData(), yTrue.getData(), batchSize, numClasses);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cross_entropy_backward_kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize(); // Opcional para sincronizar
 
     return grad;
@@ -1436,6 +1764,11 @@ Tensor softmax3d(const Tensor &logits)
 
     softmax3d_kernel<<<blocks, threads>>>(
         logits.getData(), output.getData(), B, N, D);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en softmax3d_kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize();
 
     return output;
@@ -1488,7 +1821,11 @@ Tensor softmax3d_backward(const Tensor &grad_output, const Tensor &softmax_outpu
         softmax_output.getData(),
         grad_input.getData(),
         B, N, D);
-
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en softmax3d_backward_kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize(); // Opcional para depuración
 
     return grad_input;
@@ -1587,6 +1924,12 @@ void Tensor::adamUpdate1D(const Tensor &grad, Tensor &m, Tensor &v,
         this->data, grad.getData(), m.getData(), v.getData(),
         lr, beta1, beta2, beta1_t, beta2_t,
         epsilon, weight_decay, size);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en adam_1d_kernel: " + std::string(cudaGetErrorString(err)));
+    }
+    cudaDeviceSynchronize(); // opcional para depuración
 }
 
 void Tensor::adamUpdate2D(const Tensor &grad, Tensor &m, Tensor &v,
@@ -1604,6 +1947,11 @@ void Tensor::adamUpdate2D(const Tensor &grad, Tensor &m, Tensor &v,
         this->data, grad.getData(), m.getData(), v.getData(),
         lr, beta1, beta2, beta1_t, beta2_t,
         epsilon, weight_decay, rows, cols);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en adam_2d_kernel: " + std::string(cudaGetErrorString(err)));
+    }
 }
 
 void Tensor::adamUpdate3D(const Tensor &grad, Tensor &m, Tensor &v,
@@ -1622,6 +1970,11 @@ void Tensor::adamUpdate3D(const Tensor &grad, Tensor &m, Tensor &v,
         this->data, grad.getData(), m.getData(), v.getData(),
         lr, beta1, beta2, beta1_t, beta2_t,
         epsilon, weight_decay, d0, d1, d2);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en adam_3d_kernel: " + std::string(cudaGetErrorString(err)));
+    }
 }
 
 // Kernel que copia patch_dim elementos del tensor origen (patch_view) al destino (patches_flat)
@@ -1660,15 +2013,44 @@ void Tensor::copyToHost(float *host_buffer) const
 
     // Paso 1: reservar buffer intermedio en GPU
     float *device_buffer;
-    cudaMalloc(&device_buffer, totalSize * sizeof(float));
+    cudaError_t err = cudaMalloc(&device_buffer, totalSize * sizeof(float));
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en cudaMalloc para device_buffer: " + std::string(cudaGetErrorString(err)));
+    }
 
     // Paso 2: copiar shape y strides a GPU
     size_t *device_shape, *device_strides;
-    cudaMalloc(&device_shape, shape.size() * sizeof(size_t));
-    cudaMalloc(&device_strides, strides.size() * sizeof(size_t));
+    err = cudaMalloc(&device_shape, shape.size() * sizeof(size_t));
+    if (err != cudaSuccess)
+    {
+        cudaFree(device_buffer);
+        throw std::runtime_error("Fallo en cudaMalloc para device_shape: " + std::string(cudaGetErrorString(err)));
+    }
+    err = cudaMalloc(&device_strides, strides.size() * sizeof(size_t));
+    if (err != cudaSuccess)
+    {
+        cudaFree(device_buffer);
+        cudaFree(device_shape);
+        throw std::runtime_error("Fallo en cudaMalloc para device_strides: " + std::string(cudaGetErrorString(err)));
+    }
 
-    cudaMemcpy(device_shape, shape.data(), shape.size() * sizeof(size_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(device_strides, strides.data(), strides.size() * sizeof(size_t), cudaMemcpyHostToDevice);
+    err = cudaMemcpy(device_shape, shape.data(), shape.size() * sizeof(size_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        cudaFree(device_buffer);
+        cudaFree(device_shape);
+        cudaFree(device_strides);
+        throw std::runtime_error("Fallo en cudaMemcpy para device_shape: " + std::string(cudaGetErrorString(err)));
+    }
+    err = cudaMemcpy(device_strides, strides.data(), strides.size() * sizeof(size_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess)
+    {
+        cudaFree(device_buffer);
+        cudaFree(device_shape);
+        cudaFree(device_strides);
+        throw std::runtime_error("Fallo en cudaMemcpy para device_strides: " + std::string(cudaGetErrorString(err)));
+    }
 
     // Paso 3: lanzar kernel
     const int threads = 256;
@@ -1677,12 +2059,26 @@ void Tensor::copyToHost(float *host_buffer) const
     copy_patch_kernel<<<blocks, threads>>>(
         data, device_strides, device_shape, shape.size(),
         dataOffset, device_buffer, 0, totalSize);
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        cudaFree(device_buffer);
+        cudaFree(device_shape);
+        cudaFree(device_strides);
+        throw std::runtime_error("Fallo en copy_patch_kernel: " + std::string(cudaGetErrorString(err)));
+    }
 
     cudaDeviceSynchronize();
 
     // Paso 4: copiar del buffer GPU al host
-    cudaMemcpy(host_buffer, device_buffer, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
-
+    err = cudaMemcpy(host_buffer, device_buffer, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess)
+    {
+        cudaFree(device_buffer);
+        cudaFree(device_shape);
+        cudaFree(device_strides);
+        throw std::runtime_error("Fallo en cudaMemcpy para host_buffer: " + std::string(cudaGetErrorString(err)));
+    }
     // Paso 5: liberar memoria
     cudaFree(device_buffer);
     cudaFree(device_shape);
@@ -1760,7 +2156,11 @@ Tensor Tensor::extractPatches(size_t patch_size,
         num_patches_h,
         num_patches_w,
         patch_dim);
-
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en extract_patches_kernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize();
     return patches_flat;
 }
@@ -1870,7 +2270,11 @@ Tensor Tensor::layerNorm(const Tensor &gamma,
         beta.getData(),
         featureSize,
         epsilon);
-
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en layerNormKernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize(); // opcional, por depuración
 
     return output;
@@ -1888,6 +2292,11 @@ void Tensor::scale(float factor)
     size_t threads = 256;
     size_t blocks = (totalSize + threads - 1) / threads;
     scaleKernel<<<blocks, threads>>>(data, totalSize, factor);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en scaleKernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize(); // Opcional, si necesita bloqueo
 }
 __global__ void geluKernel(float *out, const float *in, size_t size)
@@ -1920,6 +2329,11 @@ Tensor Tensor::gelu_f() const
     int blocks = (size + threads - 1) / threads;
 
     geluKernel<<<blocks, threads>>>(output_ptr, input_ptr, size);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("Fallo en geluKernel: " + std::string(cudaGetErrorString(err)));
+    }
     cudaDeviceSynchronize(); // O usar streams si lo deseas asincrónico
 
     return result;

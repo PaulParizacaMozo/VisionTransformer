@@ -34,6 +34,7 @@ private:
     std::vector<size_t> strides;
     size_t dataOffset;
     size_t totalSize;
+    bool ownsMemory = true;
 
 public:
     void copyToHost(float *host_buffer) const;
@@ -48,6 +49,26 @@ public:
     Tensor &operator=(const Tensor &other) = default;
     Tensor &operator=(Tensor &&other) noexcept = default;
     ~Tensor() = default;
+
+    void release()
+    {
+        if (data != nullptr)
+        {
+            cudaError_t err = cudaFree(data);
+            if (err != cudaSuccess)
+            {
+                std::cerr << "[Tensor] Error al liberar data: " << cudaGetErrorString(err) << std::endl;
+            }
+            data = nullptr;
+        }
+
+        // También es buena idea limpiar metadatos si ya no se usará el tensor
+        shape.clear();
+        strides.clear();
+        totalSize = 0;
+        dataOffset = 0;
+    }
+
     // --- Operaciones y Vistas ---
     Tensor slice(size_t axis, size_t start, size_t count) const;
     Tensor reshape(const std::vector<size_t> &newShape, bool print = false) const;

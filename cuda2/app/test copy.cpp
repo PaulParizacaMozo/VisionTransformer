@@ -63,55 +63,11 @@ void printConfusionMatrix(const std::vector<std::vector<int>> &confusion)
   line();
   std::cout << "(valores en % — diagonal resaltada)\n\n";
 }
-void debug_model_parameters(VisionTransformer &model, const std::string &titulo = "Debug de Tensores del Modelo")
-{
-  std::cout << "=========== " << titulo << " ===========" << std::endl;
-
-  const auto &params = model.getParameters();
-
-  for (size_t tensorIndex = 0; tensorIndex < params.size(); ++tensorIndex)
-  {
-    const Tensor &tensor = *params[tensorIndex];
-    size_t num_elements = tensor.getSize();
-
-    // Reservar en host
-    std::vector<float> host_data(num_elements);
-    cudaMemcpy(host_data.data(),
-               tensor.getData() + tensor.getDataOffset(),
-               num_elements * sizeof(float),
-               cudaMemcpyDeviceToHost);
-
-    float sum = std::accumulate(host_data.begin(), host_data.end(), 0.0f);
-    std::cout << "[DEBUG] Tensor #" << tensorIndex
-              << " (" << tensor.shapeToString() << ") "
-              << "Checksum = " << sum << std::endl;
-
-    bool has_nan = std::any_of(host_data.begin(), host_data.end(),
-                               [](float v)
-                               { return std::isnan(v); });
-
-    if (has_nan)
-    {
-      std::cerr << "[ADVERTENCIA] Tensor #" << tensorIndex
-                << " contiene NaNs." << std::endl;
-    }
-
-    std::cout << "[DEBUG] Primeros valores: ";
-    for (size_t i = 0; i < std::min((size_t)3, num_elements); ++i)
-      std::cout << host_data[i] << " ";
-    std::cout << "\n";
-  }
-
-  std::cout << "=========== Fin del Debug ===========" << std::endl;
-}
 
 int main()
 {
-  cudaDeviceReset();
   try
   {
-    const size_t BATCH_SIZE = 256; // o 64, según tu GPU
-
     const std::string model_name = "vit_mnist_30ep_4_8";
     const std::string weights_path = model_name + ".weights";
     const std::string config_path = model_name + ".json";
@@ -130,103 +86,48 @@ int main()
 
     // --- 3. Cargar datos de prueba ---
     auto test_data =
-        load_csv_data("data/mnist_test.csv", 0.1f, 1, 28, 28, 0.1307f, 0.3081f);
+        load_csv_data("data/mnist_test.csv", 0.05f, 1, 28, 28, 0.1307f, 0.3081f);
 
     // --- 3. Hacer predicciones ---
     const Tensor &X_test = test_data.first;
     const Tensor &y_test = test_data.second;
-    std::cout << "X_test shape: " << X_test.shapeToString() << std::endl;
-    std::cout << "y_test shape: " << y_test.shapeToString() << std::endl;
-    const size_t total_samples = X_test.getShape()[0];
-    const size_t total_batches = (total_samples + BATCH_SIZE - 1) / BATCH_SIZE;
 
-    std::vector<int> predicted_class;
-    std::vector<int> true_label;
+    Tensor logits = model.forward(
+        X_test, false); // `isTraining` es `false` durante la inferencia
 
-    for (size_t start = 0, batch_idx = 0; start < total_samples; start += BATCH_SIZE, ++batch_idx)
-    {
-      size_t end = std::min(start + BATCH_SIZE, total_samples);
-      size_t current_batch_size = end - start;
+    // std::cout << "Inferencia completada. Shape de logits: "
+    // << logits.shapeToString() << std::endl;
+    logits.printData("Logits");
+    Tensor probabilities = softmax(logits);
+    // std::cout << "Probabilidades calculadas. Shape: "
+    // << probabilities.shapeToString() << std::endl;
+    probabilities.printData("Probabilidades");
+    std::vector<int> predicted_class = probabilities.argmaxPerRow(); // predicción por argmax de softmax
+    std::vector<int> true_label = y_test.argmaxOneHot();             // etiqueta verdadera por argmax del one-hot
 
-      // Extraer batch de X_test
-      std::cout << "start=" << start
-                << ", end=" << end
-                << ", current_batch_size=" << current_batch_size
-                << ", batch " << (batch_idx + 1) << "/" << total_batches
-                << std::endl;
+    size_t batch_size = probabilities.getShape()[0];
+    size_t num_classes = probabilities.getShape()[1];
 
-      Tensor X_batch = X_test.slice(0, start, end - start); // eje 0, desde `start`, largo `end - start`
-      Tensor y_batch = y_test.slice(0, start, end - start);
-      // X_batch.printFirstRow("X_batch");
-      // X_batch.printData("X_batch");
-      // y_batch.printFirstRow("y_batch");
-      // y_batch.printData("y_batch");
-      std::cout << "Training" << std::endl;
-      Tensor logits = model.forward(X_batch, false);
-      // logits.printFirstRow("Logits");
-      Tensor probs = softmax(logits);
-      // probs.printFirstRow("Probabilidades");
-      std::vector<int> preds = probs.argmaxPerRow();
-      std::vector<int> labels = y_batch.argmaxOneHot();
+    int correct_predictions = 0;
+    int total_samples = 0;
 
-      predicted_class.insert(predicted_class.end(), preds.begin(), preds.end());
-      true_label.insert(true_label.end(), labels.begin(), labels.end());
-    }
-    // Luego de una predicción o entrenamiento
-    debug_model_parameters(model, "Estado de los pesos tras el forward");
+    // Matriz de confusión: confusion[true][predicted]
+    std::vector<std::vector<int>> confusion(num_classes,
+                                            std::vector<int>(num_classes, 0));
 
-    size_t correct_predictions = 0;
-    size_t num_classes = y_test.getShape()[1];
-    std::vector<std::vector<int>> confusion(num_classes, std::vector<int>(num_classes, 0));
-
-    for (size_t i = 0; i < predicted_class.size(); ++i)
+    for (size_t i = 0; i < batch_size; ++i)
     {
       int pred = predicted_class[i];
-      int label = true_label[i];
-      if (pred == label)
+      int true_lbl = true_label[i];
+
+      if (pred == true_lbl)
+      {
         ++correct_predictions;
-      confusion[label][pred]++;
+      }
+
+      confusion[true_lbl][pred]++;
+      ++total_samples;
     }
-    // --- 4. Mostrar métricas ---
-    float accuracy = static_cast<float>(correct_predictions) / total_samples;
-    std::cout << "\nAccuracy del modelo: " << accuracy * 100.0f << "%"
-              << std::endl;
-    // Tensor logits = model.forward(
-    //     X_test, false); // `isTraining` es `false` durante la inferencia
-
-    // // std::cout << "Inferencia completada. Shape de logits: "
-    // // << logits.shapeToString() << std::endl;
-    // logits.printData("Logits");
-    // Tensor probabilities = softmax(logits);
-    // // std::cout << "Probabilidades calculadas. Shape: "
-    // // << probabilities.shapeToString() << std::endl;
-    // probabilities.printData("Probabilidades");
-    // std::vector<int> predicted_class = probabilities.argmaxPerRow(); // predicción por argmax de softmax
-    // std::vector<int> true_label = y_test.argmaxOneHot();             // etiqueta verdadera por argmax del one-hot
-
-    // size_t batch_size = probabilities.getShape()[0];
-    // size_t num_classes = probabilities.getShape()[1];
-
-    // int correct_predictions = 0;
-    // int total_samples = 0;
-
-    // // Matriz de confusión: confusion[true][predicted]
-    // std::vector<std::vector<int>> confusion(num_classes,
-    //                                         std::vector<int>(num_classes, 0));
-
-    // for (size_t i = 0; i < batch_size; ++i)
-    // {
-    //   int pred = predicted_class[i];
-    //   int true_lbl = true_label[i];
-
-    //   if (pred == true_lbl)
-    //   {
-    //     ++correct_predictions;
-    //   }
-
-    //   confusion[true_lbl][pred]++;
-    //   ++total_samples;
-    // }
     // for (size_t i = 0; i < batch_size; ++i)
     // {
     //   float max_prob = -std::numeric_limits<float>::infinity();
@@ -262,6 +163,11 @@ int main()
     //   confusion[true_label][predicted_class]++;
     //   ++total_samples;
     // }
+
+    // --- 4. Mostrar métricas ---
+    float accuracy = static_cast<float>(correct_predictions) / total_samples;
+    std::cout << "\nAccuracy del modelo: " << accuracy * 100.0f << "%"
+              << std::endl;
 
     // Parámetros de formato
     const int w_class = 8;

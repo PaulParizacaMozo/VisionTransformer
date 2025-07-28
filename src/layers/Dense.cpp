@@ -1,8 +1,10 @@
 #include "layers/Dense.hpp"
 #include "core/Tensor.hpp" // Para matrixMultiply y otras operaciones
 #include <stdexcept>
+#include "utils/CudaUtils.hpp"
 
-Dense::Dense(size_t inputSize, size_t outputSize) {
+Dense::Dense(size_t inputSize, size_t outputSize)
+{
   // float stddev = std::sqrt(2.0f / static_cast<float>(inputSize));
   float stddev = 0.02f;
   this->weights = Tensor({inputSize, outputSize});
@@ -22,8 +24,10 @@ Dense::Dense(size_t inputSize, size_t outputSize) {
  * @brief Realiza el paso hacia adelante: Y = X * W + b.
  * @details Ahora soporta entradas 2D {batch, features_in} y 3D {batch, tokens, features_in}.
  */
-Tensor Dense::forward(const Tensor &input, bool isTraining) {
-  if (isTraining) {
+Tensor Dense::forward(const Tensor &input, bool isTraining)
+{
+  if (isTraining)
+  {
     this->inputTensor = input; // Guardamos la entrada con su forma original
   }
 
@@ -31,14 +35,15 @@ Tensor Dense::forward(const Tensor &input, bool isTraining) {
   size_t inputRank = inputShape.size();
 
   // Si la entrada es 3D, la aplanamos temporalmente a 2D para la multiplicación
-  if (inputRank == 3) {
+  if (inputRank == 3)
+  {
     size_t batchSize = inputShape[0];
     size_t numTokens = inputShape[1];
     size_t featuresIn = inputShape[2];
     Tensor input2D = input.reshape({batchSize * numTokens, featuresIn});
 
     // Y' = X_2D * W
-    Tensor output2D = matrixMultiply(input2D, this->weights);
+    Tensor output2D = matrixMultiply_cuda(input2D, this->weights);
     // Y = Y' + b
     output2D.addBroadcast(this->bias);
 
@@ -47,8 +52,9 @@ Tensor Dense::forward(const Tensor &input, bool isTraining) {
   }
 
   // Si la entrada ya es 2D, procedemos como antes
-  if (inputRank == 2) {
-    Tensor output = matrixMultiply(input, this->weights);
+  if (inputRank == 2)
+  {
+    Tensor output = matrixMultiply_cuda(input, this->weights);
     output.addBroadcast(this->bias);
     return output;
   }
@@ -59,7 +65,8 @@ Tensor Dense::forward(const Tensor &input, bool isTraining) {
 /**
  * @brief Realiza la retropropagación a través de la capa.
  */
-Tensor Dense::backward(const Tensor &outputGradient) {
+Tensor Dense::backward(const Tensor &outputGradient)
+{
   const auto &inputShape = this->inputTensor.getShape();
   size_t inputRank = inputShape.size();
 
@@ -67,7 +74,8 @@ Tensor Dense::backward(const Tensor &outputGradient) {
   Tensor input_to_process = this->inputTensor;
 
   // Si la entrada original era 3D, aplanamos tanto la entrada guardada como el gradiente
-  if (inputRank == 3) {
+  if (inputRank == 3)
+  {
     size_t batchSize = inputShape[0];
     size_t numTokens = inputShape[1];
     size_t featuresIn = inputShape[2];
@@ -76,11 +84,13 @@ Tensor Dense::backward(const Tensor &outputGradient) {
     // --- DEFENSA ---
     // Aseguramos que los tensores son contiguos antes de remodelar
 
-    if (!grad_to_process.isContiguous()) {
+    if (!grad_to_process.isContiguous())
+    {
       grad_to_process = grad_to_process.contiguous();
     }
 
-    if (!input_to_process.isContiguous()) {
+    if (!input_to_process.isContiguous())
+    {
       input_to_process = input_to_process.contiguous();
     }
 
@@ -89,16 +99,21 @@ Tensor Dense::backward(const Tensor &outputGradient) {
   }
 
   // --- Los cálculos de gradientes ahora se hacen siempre en 2D ---
-  Tensor inputTransposed = input_to_process.transpose(0, 1);
-  this->weightGradients = matrixMultiply(inputTransposed, grad_to_process);
+  // Tensor inputTransposed = input_to_process.transpose(0, 1);
+  Tensor inputTransposed = input_to_process.transpose(0, 1).contiguous();
+  // this->weightGradients = matrixMultiply(inputTransposed, grad_to_process);
+  this->weightGradients = matrixMultiply_cuda(inputTransposed, grad_to_process);
 
   this->biasGradients = grad_to_process.sum(0);
 
-  Tensor weightsTransposed = this->weights.transpose(0, 1);
-  Tensor inputGradient2D = matrixMultiply(grad_to_process, weightsTransposed);
+  // Tensor weightsTransposed = this->weights.transpose(0, 1);
+  Tensor weightsTransposed = this->weights.transpose(0, 1).contiguous();
+  // Tensor inputGradient2D = matrixMultiply(grad_to_process, weightsTransposed);
+  Tensor inputGradient2D = matrixMultiply_cuda(grad_to_process, weightsTransposed);
 
   // Si la entrada original era 3D, remodelamos el gradiente de salida a 3D
-  if (inputRank == 3) {
+  if (inputRank == 3)
+  {
     return inputGradient2D.reshape(inputShape);
   }
 

@@ -2,7 +2,10 @@
 
 # Terminar el script inmediatamente si un comando falla.
 set -e
-
+GCC_VER=13
+export CC=/usr/bin/gcc-${GCC_VER}
+export CXX=/usr/bin/g++-${GCC_VER}
+export CUDAHOSTCXX=${CXX}
 # --- Variables de Configuración ---
 BUILD_DIR="build"
 PROJECT_NAME="ViT" # <-- Actualizado de "CNN" a "ViT"

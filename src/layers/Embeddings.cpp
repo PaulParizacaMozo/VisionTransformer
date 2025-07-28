@@ -1,9 +1,11 @@
 #include "layers/Embeddings.hpp"
 #include "core/Tensor.hpp" // Para expand, concatenate
 #include <iostream>
+#include "utils/CudaUtils.hpp"
 
 Embeddings::Embeddings(size_t image_height, size_t image_width, size_t patch_size, size_t in_channels, size_t embedding_dim)
-    : embedding_dim(embedding_dim) {
+    : embedding_dim(embedding_dim)
+{
 
   patcher = std::make_unique<PatchEmbedding>(image_height, image_width, patch_size, in_channels, embedding_dim);
   this->num_patches = patcher->getNumPatches();
@@ -21,7 +23,8 @@ Embeddings::Embeddings(size_t image_height, size_t image_width, size_t patch_siz
   positionalEncodingGradient = Tensor(positionalEncoding.getShape());
 }
 
-Tensor Embeddings::forward(const Tensor &input, bool isTraining) {
+Tensor Embeddings::forward(const Tensor &input, bool isTraining)
+{
   size_t batchSize = input.getShape()[0];
 
   // 1. Obtener los embeddings de los parches
@@ -33,10 +36,10 @@ Tensor Embeddings::forward(const Tensor &input, bool isTraining) {
 
   // 2. Expandir el token CLS para que coincida con el tamaño del batch
   Tensor cls_token_batch = clsToken.expand({batchSize, 1, embedding_dim});
-  
-  // 3. Concatenar el CLS token y los parches a lo largo del eje de la secuencia (axis=1)
-  Tensor embeddings_with_cls = concatenate({cls_token_batch, patch_embeddings}, 1); // -> {B, N+1, D}
 
+  // 3. Concatenar el CLS token y los parches a lo largo del eje de la secuencia (axis=1)
+  // Tensor embeddings_with_cls = concatenate({cls_token_batch, patch_embeddings}, 1);      // -> {B, N+1, D}
+  Tensor embeddings_with_cls = concatenate_cuda({cls_token_batch, patch_embeddings}, 1); // -> {B, N+1, D}
   // 4. Añadir la codificación posicional
   // addBroadcast suma {1, N+1, D} a cada muestra de {B, N+1, D}
   embeddings_with_cls.addBroadcast(this->positionalEncoding);
@@ -44,7 +47,8 @@ Tensor Embeddings::forward(const Tensor &input, bool isTraining) {
   return embeddings_with_cls;
 }
 
-Tensor Embeddings::backward(const Tensor &outputGradient) {
+Tensor Embeddings::backward(const Tensor &outputGradient)
+{
   this->positionalEncodingGradient = outputGradient.sum(0);
   Tensor grad_before_pos = outputGradient;
 
@@ -64,9 +68,12 @@ Tensor Embeddings::backward(const Tensor &outputGradient) {
   // Usamos el operator() que sabe cómo manejar los strides de la vista
   const auto &shape = grad_patches_view.getShape();
 #pragma omp parallel for collapse(3)
-  for (size_t i = 0; i < shape[0]; ++i) {
-    for (size_t j = 0; j < shape[1]; ++j) {
-      for (size_t k = 0; k < shape[2]; ++k) {
+  for (size_t i = 0; i < shape[0]; ++i)
+  {
+    for (size_t j = 0; j < shape[1]; ++j)
+    {
+      for (size_t k = 0; k < shape[2]; ++k)
+      {
         grad_patches_contiguous(i, j, k) = grad_patches_view(i, j, k);
       }
     }
@@ -78,7 +85,8 @@ Tensor Embeddings::backward(const Tensor &outputGradient) {
   return input_image_gradient;
 }
 
-std::vector<Tensor *> Embeddings::getParameters() {
+std::vector<Tensor *> Embeddings::getParameters()
+{
   // Obtenemos los parámetros de la capa interna (pesos y bias de la Dense)
   auto params = this->patcher->getParameters();
   // Añadimos nuestros propios parámetros
@@ -87,7 +95,8 @@ std::vector<Tensor *> Embeddings::getParameters() {
   return params;
 }
 
-std::vector<Tensor *> Embeddings::getGradients() {
+std::vector<Tensor *> Embeddings::getGradients()
+{
   auto grads = this->patcher->getGradients();
   grads.push_back(&this->clsTokenGradient);
   grads.push_back(&this->positionalEncodingGradient);

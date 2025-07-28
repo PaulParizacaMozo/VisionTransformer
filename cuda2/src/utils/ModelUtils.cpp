@@ -3,7 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 #include "utils/json.hpp"
-
+#define DEBUG_WEIGHT_LOADING
 using json = nlohmann::json;
 
 namespace ModelUtils
@@ -73,7 +73,7 @@ namespace ModelUtils
 
     std::cout << "Cargando " << params.size() << " tensores de parámetros desde " << filePath << "..." << std::endl;
 
-    // size_t index = 0;
+    size_t tensorIndex = 0;
     for (auto &tensor_ptr : params)
     {
       // std::cout << "\nProcesando tensor #" << index++ << std::endl;
@@ -120,6 +120,31 @@ namespace ModelUtils
         cudaMemcpy(tensor.getData() + tensor.getDataOffset(), host_data.data(),
                    num_elements * sizeof(float), cudaMemcpyHostToDevice);
         // inFile.read(reinterpret_cast<char *>(tensor.getData() + tensor.getDataOffset()), num_elements * sizeof(float));
+
+#ifdef DEBUG_WEIGHT_LOADING
+        // Verificación: leer de nuevo desde GPU para comparar
+        std::vector<float> verify_data(num_elements);
+        cudaMemcpy(verify_data.data(), tensor.getData() + tensor.getDataOffset(),
+                   num_elements * sizeof(float), cudaMemcpyDeviceToHost);
+
+        float sum = std::accumulate(verify_data.begin(), verify_data.end(), 0.0f);
+        std::cout << "[DEBUG] Tensor #" << tensorIndex << " cargado. Checksum = " << sum << std::endl;
+
+        // Verificar si contiene NaNs
+        bool has_nan = std::any_of(verify_data.begin(), verify_data.end(),
+                                   [](float v)
+                                   { return std::isnan(v); });
+        if (has_nan)
+        {
+          std::cerr << "[ADVERTENCIA] Tensor #" << tensorIndex << " contiene NaNs tras la carga." << std::endl;
+        }
+
+        // Opcional: mostrar los primeros 3 valores
+        std::cout << "[DEBUG] Primeros valores: ";
+        for (int i = 0; i < std::min((size_t)3, num_elements); ++i)
+          std::cout << verify_data[i] << " ";
+        std::cout << "\n";
+#endif
       }
       size_t leido = static_cast<size_t>(inFile.gcount());
       // std::cout << "Bytes leídos: " << leido << std::endl;
@@ -128,6 +153,7 @@ namespace ModelUtils
       {
         throw std::runtime_error("Error de lectura: fin de archivo inesperado o datos corruptos.");
       }
+      ++tensorIndex;
       // std::cout << "Tensor cargado correctamente." << std::endl;
     }
 

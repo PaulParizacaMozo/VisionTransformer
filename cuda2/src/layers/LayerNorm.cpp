@@ -57,10 +57,20 @@ Tensor LayerNorm::forward(const Tensor &input, bool isTraining)
     this->variance = var;
     this->normalizedInput = normalized;
   }
-
+  else
+  {
+    // Liberar tensores temporales si no los vas a usar
+    input2D.release();
+    mean.release();
+    var.release();
+    normalized.release();
+  }
   // // Devolvemos el tensor con su forma original.
   // std::cout << "Forward pass de LayerNorm completado. Shape: " << output.shapeToString() << std::endl;
-  return output.reshape(inputShape);
+
+  Tensor reshaped = output.reshape(inputShape);
+  output.release();
+  return reshaped;
   // if (isTraining)
   // {
   //   this->inputTensor = input2D;
