@@ -30,6 +30,9 @@ PatchEmbedding::PatchEmbedding(size_t image_height, size_t image_width, size_t p
   // - kernel_size: patch_size
   // - stride: patch_size
   // - padding: 0
+  // this->patch_dim = patch_size * patch_size * in_channels;
+  // this->projectionLayer = std::make_unique<Dense>(this->patch_dim, this->embedding_dim);
+
   this->projectionLayer = std::make_unique<Conv2d>(in_channels, embedding_dim, patch_size, patch_size, 0);
 }
 
@@ -79,11 +82,6 @@ Tensor PatchEmbedding::backward(const Tensor &outputGradient)
   Tensor grad = outputGradient.transpose(1, 2);
 
   grad = contiguous_cuda(grad);
-  // grad = grad.contiguous(); // Necesario antes del reshape
-  // if (verify(grad, grad_cuda, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de contiguous 3d para PatchEmbedding backward\n";
-  // }
   // 2. Invertir el aplanamiento (reshape)
   // {B, D, N} -> {B, D, num_patches_h, num_patches_w}
   grad = grad.reshape({batchSize, this->embedding_dim, this->num_patches_h, this->num_patches_w});

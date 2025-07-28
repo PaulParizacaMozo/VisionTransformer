@@ -3,8 +3,6 @@
 #include "utils/ModelUtils.hpp"
 #include <iostream>
 
-Tensor softmax(const Tensor &logits, int axis = -1);
-
 int main()
 {
   try
@@ -21,8 +19,8 @@ int main()
     model_config.dropout_rate = 0.1;
 
     TrainerConfig train_config;
-    train_config.epochs = 5;
-    train_config.batch_size = 523; // 128
+    train_config.epochs = 10;
+    train_config.batch_size = 512; // 128
     train_config.learning_rate = 3e-4f;
     train_config.weight_decay = 1e-4f; // 0.01f
     train_config.lr_init = train_config.learning_rate;
@@ -35,7 +33,7 @@ int main()
     // Entrenamiento + validación
     auto [train_data, valid_data] =
         load_csv_data_train_val("data/mnist_train.csv",
-                                0.5f,  // sample_frac   → 25 % del total
+                                1.f,   // sample_frac   → 25 % del total
                                 0.80f, // train_frac    → 80 % de ese 30%
                                 0.20f, // val_frac      → 20 % de ese 30%
                                 1,

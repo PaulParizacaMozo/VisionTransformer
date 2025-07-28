@@ -58,9 +58,6 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
   q = contiguous_cuda(q);
   k = contiguous_cuda(k);
   v = contiguous_cuda(v);
-  // q = q.contiguous();
-  // k = k.contiguous();
-  // v = v.contiguous();
 
   // {B, h, N, d_h} -> {B*h, N, d_h}
   q = q.reshape({B * this->num_heads, N, this->head_dim});
@@ -84,14 +81,7 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining)
 
   // {B, h, N, d_h} -> {B, N, h, d_h}
   context = context.transpose(1, 2); // <- ¡Esta operación crea la vista no contigua!
-
-  // Antes del reshape final, hacemos que el tensor sea contiguo en memoria.
   context = contiguous_cuda(context);
-  // context = context.contiguous();
-  // if (verify(context, context_cuda, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de contiguous 4d para context\n";
-  // }
 
   // Ahora este reshape es seguro.
   // {B, N, h, d_h} -> {B, N, D}
@@ -109,101 +99,7 @@ Tensor MultiHeadAttention::scaledDotProductAttention(const Tensor &q, const Tens
   Tensor output_c = scaledDotProductAttention_cuda(q, k, v, scale_factor, attention_c);
   this->attention_weights = attention_c;
   return output_c;
-  // k_transposed -> {B*h, d_h, N}
-  // Tensor k_transposed = k.transpose(1, 2);
-
-  // scores -> {B*h, N, N}
-  // Tensor scores = batchMatrixMultiply_cuda(q, k_transposed);
-
-  // Usamos un bucle para la multiplicación por escalar.
-  // Una sobrecarga de operador T*s sería ideal en el futuro.
-  // scores = scale_tensor_cuda(scores, scale_factor);
-  //   if (scores.isContiguous())
-  //   {
-  //     float *scores_data = scores.getData();
-  // #pragma omp parallel for
-  //     for (size_t i = 0; i < scores.getSize(); ++i)
-  //     {
-  //       scores_data[i] *= scale_factor;
-  //     }
-  //   }
-  //   else
-  //   {
-  //     // Fallback para vistas no contiguas
-  //     for (size_t i = 0; i < scores.getShape()[0]; ++i)
-  //       for (size_t j = 0; j < scores.getShape()[1]; ++j)
-  //         for (size_t l = 0; l < scores.getShape()[2]; ++l)
-  //           scores(i, j, l) *= scale_factor;
-  //   }
-  //   if (verify(scale_cuda, scores, 1e-5f) == false)
-  //   {
-  //     std::cerr << "Error en la verificación de scale_tensor_cuda.\n";
-  //   }
-
-  // Tensor attention = softmax_cuda(scores, 2);
-  // Tensor attention = softmax(scores, 2);
-  // if (verify(att_cuda, attention, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de softmax en scaledDotProductAttention.\n";
-  // }
-
-  // if (verify(attention, attention_c, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de atención en scaledDotProductAttention.\n";
-  // }
-
-  // Tensor out = batchMatrixMultiply_cuda(attention, v);
-  // if (verify(out, output_c, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de salida en scaledDotProductAttention.\n";
-  // }
 }
-
-// Implementación de softmax (debería ir a un archivo de utilidades)
-
-// Tensor softmax(const Tensor &logits, int axis)
-// {
-//   const auto &shape = logits.getShape();
-//   if (axis < 0)
-//     axis = shape.size() + axis;
-
-//   Tensor probabilities(shape);
-
-//   if (axis == 2 && shape.size() == 3)
-//   { // Nuestro caso de uso
-// #pragma omp parallel for collapse(2)
-//     for (size_t b = 0; b < shape[0]; ++b)
-//     {
-//       for (size_t n = 0; n < shape[1]; ++n)
-//       {
-//         float max_logit = -std::numeric_limits<float>::infinity();
-//         for (size_t d = 0; d < shape[2]; ++d)
-//         {
-//           if (logits(b, n, d) > max_logit)
-//             max_logit = logits(b, n, d);
-//         }
-
-//         float sum_exp = 0.0f;
-//         for (size_t d = 0; d < shape[2]; ++d)
-//         {
-//           float exp_val = std::exp(logits(b, n, d) - max_logit);
-//           probabilities(b, n, d) = exp_val;
-//           sum_exp += exp_val;
-//         }
-
-//         for (size_t d = 0; d < shape[2]; ++d)
-//         {
-//           probabilities(b, n, d) /= sum_exp;
-//         }
-//       }
-//     }
-//   }
-//   else
-//   {
-//     throw std::runtime_error("Softmax a lo largo de este eje no está implementado.");
-//   }
-//   return probabilities;
-// }
 
 // --- Métodos restantes (por ahora vacíos o delegando) ---
 
@@ -227,12 +123,6 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient)
   grad = grad.reshape({B, N, this->num_heads, this->head_dim});
   grad = grad.transpose(1, 2);
   grad = contiguous_cuda(grad);
-  // grad = grad.contiguous();
-  // if (verify(grad, grad_cuda, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de contiguous 4d para grad\n";
-  // }
-
   grad = grad.reshape({B * this->num_heads, N, this->head_dim});
   // 'grad' es ahora dL/d(attention_output) con forma {B*h, N, d_h}
 
@@ -244,22 +134,10 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient)
   // Tensor d_attention_weights = batchMatrixMultiply(grad, V_T);
   Tensor V_T_contiguous = this->v_split.transpose(1, 2);
   V_T_contiguous = contiguous_cuda(V_T_contiguous);
-  // V_T_contiguous = V_T_contiguous.contiguous();
-  // if (verify(V_T_contiguous, V_T_contiguous_cuda, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de contiguous 4d para v_split\n";
-  // }
   Tensor d_attention_weights = batchMatrixMultiply_cuda(grad, V_T_contiguous);
 
-  // Tensor attention_weights_T = this->attention_weights.transpose(1, 2);
-  // Tensor dV = batchMatrixMultiply(attention_weights_T, grad);
   Tensor attention_weights_T_contiguous = this->attention_weights.transpose(1, 2);
   attention_weights_T_contiguous = contiguous_cuda(attention_weights_T_contiguous);
-  // attention_weights_T_contiguous = attention_weights_T_contiguous.contiguous();
-  // if (verify(attention_weights_T_contiguous, attention_weights_T_contiguous_cuda, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de contiguous 4d para attention_weights\n";
-  // }
   Tensor dV = batchMatrixMultiply_cuda(attention_weights_T_contiguous, grad);
 
   // ----------------------------------------------------------------------
@@ -267,11 +145,6 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient)
   // ----------------------------------------------------------------------
   // Usamos la nueva función para obtener el gradiente con respecto a las puntuaciones (scores)
   Tensor d_scores = softmax_backward_cuda(d_attention_weights, this->attention_weights);
-  // Tensor d_scores = softmax_backward(d_attention_weights, this->attention_weights);
-  // if (verify(d_scores, d_scores_cuda, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de softmax_backward.\n";
-  // }
 
   // ----------------------------------------------------------------------
   // 5. Inversa del Escalamiento y Q @ K^T
@@ -280,29 +153,12 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient)
   // 5.1 Invertir el escalamiento
   float scale_factor = 1.0f / std::sqrt(static_cast<float>(this->head_dim));
   d_scores = scale_tensor_cuda(d_scores, scale_factor);
-  //   if (d_scores.isContiguous())
-  //   {
-  //     float *d_scores_data = d_scores.getData();
-  // #pragma omp parallel for
-  //     for (size_t i = 0; i < d_scores.getSize(); ++i)
-  //       d_scores_data[i] *= scale_factor;
-  //   } // (Podríamos añadir un else para el caso no contiguo si fuera necesario)
-
-  // if (verify(scale_b_cuda, d_scores, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de scale_tensor_cuda en backward.\n";
-  // }
 
   // 5.2 Propagar a través de Q @ K^T
   // Forward: scores = Q @ K^T
   // dL/dQ = dL/d(scores) @ K
   // Tensor dQ = batchMatrixMultiply(d_scores, this->k_split);
   Tensor k_contiguous = contiguous_cuda(this->k_split);
-  // Tensor k_contiguous = this->k_split.contiguous();
-  // if (verify(k_contiguous, k_contiguous_cuda, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de contiguous 4d para k_split\n";
-  // }
   Tensor dQ = batchMatrixMultiply_cuda(d_scores, k_contiguous);
 
   // dL/dK = Q^T @ dL/d(scores)
@@ -310,11 +166,6 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient)
   // Tensor dK = batchMatrixMultiply(Q_T, d_scores);
   Tensor Q_T_contiguous = this->q_split.transpose(1, 2);
   Q_T_contiguous = contiguous_cuda(Q_T_contiguous);
-  // Q_T_contiguous = Q_T_contiguous.contiguous();
-  // if (verify(Q_T_contiguous, Q_T_contiguous_cuda, 1e-5f) == false)
-  // {
-  //   std::cerr << "Error en la verificación de contiguous 4d para q_split\n";
-  // }
   Tensor dK = batchMatrixMultiply_cuda(Q_T_contiguous, d_scores);
 
   // ----------------------------------------------------------------------
@@ -326,12 +177,6 @@ Tensor MultiHeadAttention::backward(const Tensor &outputGradient)
 
     g = g.transpose(1, 2);
     g = contiguous_cuda(g);
-    // g = g.contiguous();
-    // if (verify(g, g_cuda, 1e-5f) == false)
-    // {
-    //   std::cerr << "Error en la verificación de contiguous 4d para reassemble_grads\n";
-    // }
-
     return g.reshape({B, N, this->embedding_dim});
   };
 
@@ -384,42 +229,3 @@ std::vector<Tensor *> MultiHeadAttention::getGradients()
   all_grads.insert(all_grads.end(), out_grads.begin(), out_grads.end());
   return all_grads;
 }
-
-// Tensor softmax_backward(const Tensor &grad_output, const Tensor &softmax_output)
-// {
-//   // grad_output es dL/dS, softmax_output es S
-//   const auto &shape = grad_output.getShape();
-//   Tensor grad_input(shape); // dL/dZ
-
-//   // Asumimos que el softmax se aplicó en el último eje (axis=2)
-//   if (shape.size() == 3)
-//   {
-// #pragma omp parallel for collapse(2)
-//     for (size_t b = 0; b < shape[0]; ++b)
-//     {
-//       for (size_t n = 0; n < shape[1]; ++n)
-//       {
-//         // Para cada fila de la matriz de atención
-
-//         // 1. Calcular el término sum(dL/dS_j * S_j)
-//         float dot_product = 0.0f;
-//         for (size_t k = 0; k < shape[2]; ++k)
-//         {
-//           dot_product += grad_output(b, n, k) * softmax_output(b, n, k);
-//         }
-
-//         // 2. Calcular dL/dZ_i para cada elemento de la fila
-//         for (size_t i = 0; i < shape[2]; ++i)
-//         {
-//           float s_i = softmax_output(b, n, i);
-//           grad_input(b, n, i) = s_i * (grad_output(b, n, i) - dot_product);
-//         }
-//       }
-//     }
-//   }
-//   else
-//   {
-//     throw std::runtime_error("softmax_backward no implementado para este rank.");
-//   }
-//   return grad_input;
-// }

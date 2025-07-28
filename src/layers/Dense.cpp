@@ -96,19 +96,17 @@ Tensor Dense::backward(const Tensor &outputGradient)
 
   // --- Los cálculos de gradientes ahora se hacen siempre en 2D ---
   Tensor inputTransposed = input_to_process.transpose(0, 1);
-  inputTransposed = contiguous_cuda(inputTransposed);
+  // inputTransposed = contiguous_cuda(inputTransposed);
   this->weightGradients = matrixMultiply_cuda(inputTransposed, grad_to_process);
   this->biasGradients = grad_to_process.sum(0);
 
   Tensor weightsTransposed = this->weights.transpose(0, 1);
-  weightsTransposed = contiguous_cuda(weightsTransposed);
+  // weightsTransposed = contiguous_cuda(weightsTransposed);
   Tensor inputGradient2D = matrixMultiply_cuda(grad_to_process, weightsTransposed);
 
   // Si la entrada original era 3D, remodelamos el gradiente de salida a 3D
   if (inputRank == 3)
-  {
     return inputGradient2D.reshape(inputShape);
-  }
 
   return inputGradient2D;
 }

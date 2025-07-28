@@ -53,7 +53,6 @@ int main(int argc, char **argv)
         // Procesar imagen
         Tensor input = load_image_with_stb(argv[1]);
         Tensor probabilities = softmax_cuda(model.forward(input, false));
-        // Tensor probabilities = softmax(model.forward(input, false));
 
         // Obtener resultados
         int predicted_class = -1;
