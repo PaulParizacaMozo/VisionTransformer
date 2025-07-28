@@ -73,21 +73,27 @@ Tensor Embeddings::backward(const Tensor &outputGradient)
   // --- LA SOLUCIÓN DIRECTA ---
   // En lugar de llamar a .contiguous(), creamos un nuevo tensor y copiamos los datos.
   // Esto garantiza que el tensor que pasamos es 100% contiguo.
-  Tensor grad_patches_contiguous(grad_patches_view.getShape());
+  Tensor grad_patches_contiguous = contiguous_cuda(grad_patches_view);
 
-  // Usamos el operator() que sabe cómo manejar los strides de la vista
-  const auto &shape = grad_patches_view.getShape();
-#pragma omp parallel for collapse(3)
-  for (size_t i = 0; i < shape[0]; ++i)
-  {
-    for (size_t j = 0; j < shape[1]; ++j)
-    {
-      for (size_t k = 0; k < shape[2]; ++k)
-      {
-        grad_patches_contiguous(i, j, k) = grad_patches_view(i, j, k);
-      }
-    }
-  }
+  //   Tensor grad_patches_contiguous(grad_patches_view.getShape());
+
+  //   // Usamos el operator() que sabe cómo manejar los strides de la vista
+  //   const auto &shape = grad_patches_view.getShape();
+  // #pragma omp parallel for collapse(3)
+  //   for (size_t i = 0; i < shape[0]; ++i)
+  //   {
+  //     for (size_t j = 0; j < shape[1]; ++j)
+  //     {
+  //       for (size_t k = 0; k < shape[2]; ++k)
+  //       {
+  //         grad_patches_contiguous(i, j, k) = grad_patches_view(i, j, k);
+  //       }
+  //     }
+  //   }
+  // if(verify(grad_patches_contiguous, grad_patches_contiguous_cuda, 1e-5f) == false)
+  // {
+  //   std::cerr << "Error en la verificación de grad_patches_contiguous\n";
+  // }
 
   // Ahora pasamos este tensor garantizado-contiguo
   Tensor input_image_gradient = this->patcher->backward(grad_patches_contiguous);

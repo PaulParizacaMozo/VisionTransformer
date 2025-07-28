@@ -17,43 +17,43 @@
  * @param logits Tensor de logits de forma {batch_size, num_classes}.
  * @return Un tensor de probabilidades con la misma forma.
  */
-Tensor softmax(const Tensor &logits)
-{
-  Tensor probabilities(logits.getShape());
-  const size_t batchSize = logits.getShape()[0];
-  const size_t numClasses = logits.getShape()[1];
+// Tensor softmax(const Tensor &logits)
+// {
+//   Tensor probabilities(logits.getShape());
+//   const size_t batchSize = logits.getShape()[0];
+//   const size_t numClasses = logits.getShape()[1];
 
-#pragma omp parallel for
-  for (size_t i = 0; i < batchSize; ++i)
-  {
-    // 1. Encontrar el logit máximo en la fila para la estabilidad numérica.
-    float maxLogit = -std::numeric_limits<float>::infinity();
-    for (size_t j = 0; j < numClasses; ++j)
-    {
-      if (logits(i, j) > maxLogit)
-      {
-        maxLogit = logits(i, j);
-      }
-    }
+// #pragma omp parallel for
+//   for (size_t i = 0; i < batchSize; ++i)
+//   {
+//     // 1. Encontrar el logit máximo en la fila para la estabilidad numérica.
+//     float maxLogit = -std::numeric_limits<float>::infinity();
+//     for (size_t j = 0; j < numClasses; ++j)
+//     {
+//       if (logits(i, j) > maxLogit)
+//       {
+//         maxLogit = logits(i, j);
+//       }
+//     }
 
-    // 2. Calcular los exponenciales y su suma.
-    float sumExp = 0.0f;
-    for (size_t j = 0; j < numClasses; ++j)
-    {
-      // Restar maxLogit previene que exp() devuelva 'inf'.
-      float expVal = std::exp(logits(i, j) - maxLogit);
-      probabilities(i, j) = expVal;
-      sumExp += expVal;
-    }
+//     // 2. Calcular los exponenciales y su suma.
+//     float sumExp = 0.0f;
+//     for (size_t j = 0; j < numClasses; ++j)
+//     {
+//       // Restar maxLogit previene que exp() devuelva 'inf'.
+//       float expVal = std::exp(logits(i, j) - maxLogit);
+//       probabilities(i, j) = expVal;
+//       sumExp += expVal;
+//     }
 
-    // 3. Normalizar para obtener las probabilidades.
-    for (size_t j = 0; j < numClasses; ++j)
-    {
-      probabilities(i, j) /= sumExp;
-    }
-  }
-  return probabilities;
-}
+//     // 3. Normalizar para obtener las probabilidades.
+//     for (size_t j = 0; j < numClasses; ++j)
+//     {
+//       probabilities(i, j) /= sumExp;
+//     }
+//   }
+//   return probabilities;
+// }
 
 /**
  * @brief Calcula la pérdida de entropía cruzada para un batch.

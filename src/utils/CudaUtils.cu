@@ -1751,3 +1751,369 @@ Tensor tensorSum_cuda(const Tensor &a, size_t axis)
 
     return result;
 }
+__global__ void im2col_kernel(
+    const float *input,
+    float *output,
+    size_t B, size_t C, size_t H, size_t W,
+    size_t KH, size_t KW,
+    size_t OH, size_t OW,
+    size_t stride, size_t padding)
+{
+    int col_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_cols = B * OH * OW;
+    if (col_idx >= total_cols)
+        return;
+
+    int w_out = col_idx % OW;
+    int h_out = (col_idx / OW) % OH;
+    int b = col_idx / (OH * OW);
+
+    int kernel_area = C * KH * KW;
+
+    for (int k = 0; k < kernel_area; ++k)
+    {
+        int c = k / (KH * KW);
+        int kh = (k / KW) % KH;
+        int kw = k % KW;
+
+        int h_in = h_out * stride + kh - padding;
+        int w_in = w_out * stride + kw - padding;
+
+        float val = 0.0f;
+        if (h_in >= 0 && h_in < H && w_in >= 0 && w_in < W)
+        {
+            int input_idx = ((b * C + c) * H + h_in) * W + w_in;
+            val = input[input_idx];
+        }
+
+        int out_idx = k * total_cols + col_idx;
+        output[out_idx] = val;
+    }
+}
+
+Tensor im2col_cuda(const Tensor &input, size_t kernel_size, size_t stride, size_t padding)
+{
+    const auto &shape = input.getShape(); // [B, C, H, W]
+    if (shape.size() != 4)
+        throw std::invalid_argument("im2col_cuda: input debe ser un tensor 4D");
+
+    size_t B = shape[0];
+    size_t C = shape[1];
+    size_t H = shape[2];
+    size_t W = shape[3];
+
+    size_t OH = (H + 2 * padding - kernel_size) / stride + 1;
+    size_t OW = (W + 2 * padding - kernel_size) / stride + 1;
+
+    size_t col_rows = C * kernel_size * kernel_size;
+    size_t col_cols = B * OH * OW;
+
+    Tensor result({col_rows, col_cols});
+
+    // --- Copiar input a GPU ---
+    float *d_input, *d_output;
+    size_t input_size = input.getSize();
+    CUDA_CHECK(cudaMalloc(&d_input, sizeof(float) * input_size));
+    CUDA_CHECK(cudaMemcpy(d_input, input.getData(), sizeof(float) * input_size, cudaMemcpyHostToDevice));
+
+    CUDA_CHECK(cudaMalloc(&d_output, sizeof(float) * col_rows * col_cols));
+    CUDA_CHECK(cudaMemset(d_output, 0, sizeof(float) * col_rows * col_cols));
+
+    // --- Lanzar kernel ---
+    int threads = 256;
+    int blocks = (col_cols + threads - 1) / threads;
+
+    im2col_kernel<<<blocks, threads>>>(
+        d_input, d_output,
+        B, C, H, W,
+        kernel_size, kernel_size,
+        OH, OW,
+        stride, padding);
+
+    CUDA_CHECK(cudaGetLastError());
+
+    // --- Copiar resultado a CPU ---
+    CUDA_CHECK(cudaMemcpy(result.getData(), d_output, sizeof(float) * col_rows * col_cols, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_input));
+    CUDA_CHECK(cudaFree(d_output));
+
+    return result;
+}
+__global__ void col2im_kernel(
+    const float *col_data,
+    float *img_data,
+    size_t B, size_t C, size_t H, size_t W,
+    size_t KH, size_t KW,
+    size_t OH, size_t OW,
+    size_t stride, size_t padding)
+{
+    int col_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_cols = B * OH * OW;
+    if (col_idx >= total_cols)
+        return;
+
+    int w_out = col_idx % OW;
+    int h_out = (col_idx / OW) % OH;
+    int b = col_idx / (OH * OW);
+
+    int kernel_area = C * KH * KW;
+
+    for (int k = 0; k < kernel_area; ++k)
+    {
+        int c = k / (KH * KW);
+        int kh = (k / KW) % KH;
+        int kw = k % KW;
+
+        int h_in = h_out * stride + kh - padding;
+        int w_in = w_out * stride + kw - padding;
+
+        if (h_in >= 0 && h_in < H && w_in >= 0 && w_in < W)
+        {
+            int col_matrix_idx = k * total_cols + col_idx;
+            int img_idx = ((b * C + c) * H + h_in) * W + w_in;
+
+            atomicAdd(&img_data[img_idx], col_data[col_matrix_idx]);
+        }
+    }
+}
+
+Tensor col2im_cuda(const Tensor &col_matrix, const std::vector<size_t> &output_shape,
+                   size_t kernel_size, size_t stride, size_t padding)
+{
+    if (output_shape.size() != 4)
+        throw std::invalid_argument("col2im_cuda: output_shape debe ser 4D.");
+
+    size_t B = output_shape[0];
+    size_t C = output_shape[1];
+    size_t H = output_shape[2];
+    size_t W = output_shape[3];
+
+    size_t OH = (H + 2 * padding - kernel_size) / stride + 1;
+    size_t OW = (W + 2 * padding - kernel_size) / stride + 1;
+
+    const size_t col_rows = col_matrix.getShape()[0]; // C * K * K
+    const size_t col_cols = col_matrix.getShape()[1]; // B * OH * OW
+
+    // Sanity check
+    if (col_rows != C * kernel_size * kernel_size || col_cols != B * OH * OW)
+        throw std::runtime_error("col2im_cuda: dimensiones incompatibles.");
+
+    // --- Crear tensor de salida ---
+    Tensor output(output_shape);
+    output.fill(0.0f); // Aseguramos acumulación correcta
+
+    // --- GPU memory allocation ---
+    float *d_col, *d_out;
+    CUDA_CHECK(cudaMalloc(&d_col, sizeof(float) * col_matrix.getSize()));
+    CUDA_CHECK(cudaMemcpy(d_col, col_matrix.getData(), sizeof(float) * col_matrix.getSize(), cudaMemcpyHostToDevice));
+
+    CUDA_CHECK(cudaMalloc(&d_out, sizeof(float) * output.getSize()));
+    CUDA_CHECK(cudaMemset(d_out, 0, sizeof(float) * output.getSize()));
+
+    // --- Kernel config ---
+    int threads = 256;
+    int blocks = (col_cols + threads - 1) / threads;
+
+    col2im_kernel<<<blocks, threads>>>(
+        d_col, d_out,
+        B, C, H, W,
+        kernel_size, kernel_size,
+        OH, OW,
+        stride, padding);
+
+    CUDA_CHECK(cudaGetLastError());
+
+    // --- Copiar resultado a CPU ---
+    CUDA_CHECK(cudaMemcpy(output.getData(), d_out, sizeof(float) * output.getSize(), cudaMemcpyDeviceToHost));
+
+    // --- Cleanup ---
+    CUDA_CHECK(cudaFree(d_col));
+    CUDA_CHECK(cudaFree(d_out));
+
+    return output;
+}
+__global__ void dropout_backward_kernel(const float *grad_out, const float *mask, float *grad_in, size_t totalSize)
+{
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < totalSize)
+    {
+        grad_in[i] = grad_out[i] * mask[i];
+    }
+}
+Tensor dropout_backward_cuda(const Tensor &grad_out, const Tensor &mask)
+{
+    if (!grad_out.isContiguous() || !mask.isContiguous())
+        throw std::runtime_error("dropout_backward_cuda solo soporta tensores contiguos por ahora.");
+
+    size_t totalSize = grad_out.getSize();
+    if (mask.getSize() != totalSize)
+        throw std::runtime_error("dropout_backward_cuda: tamaños no coinciden entre grad_out y mask.");
+
+    // Crear tensor de salida
+    Tensor grad_in(grad_out.getShape());
+
+    // Punteros en host
+    const float *h_grad_out = grad_out.getDataPtr()->data();
+    const float *h_mask = mask.getDataPtr()->data();
+    float *h_grad_in = grad_in.getDataPtr()->data();
+
+    // Punteros en device
+    float *d_grad_out, *d_mask, *d_grad_in;
+    CUDA_CHECK(cudaMalloc(&d_grad_out, totalSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_mask, totalSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_grad_in, totalSize * sizeof(float)));
+
+    // Copiar datos al device
+    CUDA_CHECK(cudaMemcpy(d_grad_out, h_grad_out, totalSize * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_mask, h_mask, totalSize * sizeof(float), cudaMemcpyHostToDevice));
+
+    // Lanzar kernel
+    size_t threads = 256;
+    size_t blocks = (totalSize + threads - 1) / threads;
+    dropout_backward_kernel<<<blocks, threads>>>(d_grad_out, d_mask, d_grad_in, totalSize);
+    CUDA_CHECK(cudaGetLastError());
+
+    // Copiar resultado a host
+    CUDA_CHECK(cudaMemcpy(h_grad_in, d_grad_in, totalSize * sizeof(float), cudaMemcpyDeviceToHost));
+
+    // Liberar
+    CUDA_CHECK(cudaFree(d_grad_out));
+    CUDA_CHECK(cudaFree(d_mask));
+    CUDA_CHECK(cudaFree(d_grad_in));
+
+    return grad_in;
+}
+__global__ void layernorm_forward_kernel(
+    const float *input,
+    float *output,
+    float *normalized,
+    float *mean_out,
+    float *inv_std_out,
+    const float *gamma,
+    const float *beta,
+    size_t batchSize,
+    size_t featureSize,
+    float epsilon)
+{
+    size_t row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row >= batchSize)
+        return;
+
+    const float *in_row = input + row * featureSize;
+    float *out_row = output + row * featureSize;
+    float *norm_row = normalized ? (normalized + row * featureSize) : nullptr;
+
+    // --- 1. Mean ---
+    float mean = 0.0f;
+    for (size_t j = 0; j < featureSize; ++j)
+        mean += in_row[j];
+    mean /= featureSize;
+
+    if (mean_out)
+        mean_out[row] = mean;
+
+    // --- 2. Variance ---
+    float var = 0.0f;
+    for (size_t j = 0; j < featureSize; ++j)
+    {
+        float diff = in_row[j] - mean;
+        var += diff * diff;
+    }
+    var /= featureSize;
+    float inv_std = rsqrtf(var + epsilon);
+    if (inv_std_out)
+        inv_std_out[row] = inv_std;
+
+    // --- 3. Normalize and apply gamma/beta ---
+    for (size_t j = 0; j < featureSize; ++j)
+    {
+        float x_hat = (in_row[j] - mean) * inv_std;
+        if (norm_row)
+            norm_row[j] = x_hat;
+        out_row[j] = gamma[j] * x_hat + beta[j];
+    }
+}
+LayerNormResult layernorm_forward_cuda(const Tensor &input,
+                                       const Tensor &gamma,
+                                       const Tensor &beta,
+                                       float epsilon,
+                                       bool isTraining)
+{
+    const auto &shape = input.getShape();
+    if (shape.size() < 1)
+        throw std::runtime_error("input must have at least 1 dimension");
+
+    size_t featureSize = shape.back();
+    size_t batchSize = input.getSize() / featureSize;
+    Tensor input2D = input.reshape({batchSize, featureSize});
+
+    const float *h_input = input2D.getDataPtr()->data();
+    const float *h_gamma = gamma.getDataPtr()->data();
+    const float *h_beta = beta.getDataPtr()->data();
+
+    size_t totalSize = input2D.getSize();
+
+    Tensor output({batchSize, featureSize});
+    Tensor normalized, mean, invStd;
+
+    float *d_input, *d_output, *d_normalized = nullptr;
+    float *d_mean = nullptr, *d_invstd = nullptr;
+    float *d_gamma, *d_beta;
+
+    CUDA_CHECK(cudaMalloc(&d_input, totalSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_output, totalSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_gamma, featureSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_beta, featureSize * sizeof(float)));
+
+    CUDA_CHECK(cudaMemcpy(d_input, h_input, totalSize * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_gamma, h_gamma, featureSize * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_beta, h_beta, featureSize * sizeof(float), cudaMemcpyHostToDevice));
+
+    if (isTraining)
+    {
+        normalized = Tensor({batchSize, featureSize});
+        mean = Tensor({batchSize, 1});
+        invStd = Tensor({batchSize, 1});
+        CUDA_CHECK(cudaMalloc(&d_normalized, totalSize * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&d_mean, batchSize * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&d_invstd, batchSize * sizeof(float)));
+    }
+
+    size_t threads = 256;
+    size_t blocks = (batchSize + threads - 1) / threads;
+
+    layernorm_forward_kernel<<<blocks, threads>>>(
+        d_input,
+        d_output,
+        d_normalized,
+        d_mean,
+        d_invstd,
+        d_gamma,
+        d_beta,
+        batchSize,
+        featureSize,
+        epsilon);
+    CUDA_CHECK(cudaGetLastError());
+
+    CUDA_CHECK(cudaMemcpy(output.getDataPtr()->data(), d_output, totalSize * sizeof(float), cudaMemcpyDeviceToHost));
+    if (isTraining)
+    {
+        CUDA_CHECK(cudaMemcpy(normalized.getDataPtr()->data(), d_normalized, totalSize * sizeof(float), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(mean.getDataPtr()->data(), d_mean, batchSize * sizeof(float), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(invStd.getDataPtr()->data(), d_invstd, batchSize * sizeof(float), cudaMemcpyDeviceToHost));
+    }
+
+    CUDA_CHECK(cudaFree(d_input));
+    CUDA_CHECK(cudaFree(d_output));
+    CUDA_CHECK(cudaFree(d_gamma));
+    CUDA_CHECK(cudaFree(d_beta));
+    if (isTraining)
+    {
+        CUDA_CHECK(cudaFree(d_normalized));
+        CUDA_CHECK(cudaFree(d_mean));
+        CUDA_CHECK(cudaFree(d_invstd));
+    }
+
+    return {input2D, output.reshape(shape), normalized, mean, invStd};
+}

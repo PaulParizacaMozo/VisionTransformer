@@ -3,6 +3,15 @@
 
 #include "core/Tensor.hpp"
 
+struct LayerNormResult
+{
+    Tensor input2D;
+    Tensor output;
+    Tensor normalized;
+    Tensor mean;
+    Tensor invStd; // 1 / sqrt(var + epsilon)
+};
+
 // funciones que se ejecutaran en la GPU
 Tensor matrixMultiply_cuda(const Tensor &a, const Tensor &b);
 Tensor batchMatrixMultiply_cuda(const Tensor &a, const Tensor &b);
@@ -18,4 +27,13 @@ Tensor denseForward_cuda(const Tensor &input, const Tensor &weights, const Tenso
 Tensor tensorAdd_cuda(const Tensor &a, const Tensor &b);
 Tensor tensorSquare_cuda(const Tensor &a);
 Tensor tensorSum_cuda(const Tensor &a, size_t axis);
+Tensor im2col_cuda(const Tensor &input, size_t kernel_size, size_t stride, size_t padding);
+Tensor col2im_cuda(const Tensor &col_matrix, const std::vector<size_t> &output_shape,
+                   size_t kernel_size, size_t stride, size_t padding);
+Tensor dropout_backward_cuda(const Tensor &grad_out, const Tensor &mask);
+LayerNormResult layernorm_forward_cuda(const Tensor &input,
+                                       const Tensor &gamma,
+                                       const Tensor &beta,
+                                       float epsilon,
+                                       bool isTraining);
 #endif // CUDAUTILS_HPP
