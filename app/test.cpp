@@ -1,5 +1,6 @@
 #include "model/Trainer.hpp"
 #include "utils/DataReader.hpp"
+#include "utils/CudaUtils.hpp"
 #include "utils/ModelUtils.hpp"
 #include <iomanip>
 #include <iostream>
@@ -98,7 +99,13 @@ int main()
 
     Tensor logits = model.forward(
         X_test, false); // `isTraining` es `false` durante la inferencia
-    Tensor probabilities = softmax(logits);
+    // Tensor probabilities = softmax(logits);
+    Tensor probabilities = softmax_cuda(logits);
+    // if (verify(probabilities, probabilities_cuda, 1e-5f) == false)
+    // {
+    //   std::cerr << "Error en la verificación de softmax.\n";
+    //   return 1;
+    // }
 
     size_t batch_size = probabilities.getShape()[0];
     size_t num_classes = probabilities.getShape()[1];

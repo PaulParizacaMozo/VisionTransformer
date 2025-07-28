@@ -7,5 +7,12 @@
 Tensor matrixMultiply_cuda(const Tensor &a, const Tensor &b);
 Tensor batchMatrixMultiply_cuda(const Tensor &a, const Tensor &b);
 Tensor concatenate_cuda(const std::vector<Tensor> &tensors, size_t axis);
+Tensor addBroadcast_cuda(const Tensor &A, const Tensor &B);
+Tensor contiguous_cuda(const Tensor &input);
+Tensor softmax_cuda(const Tensor &logits);
+Tensor softmax_cuda(const Tensor &logits, int axis);
+Tensor softmax_backward_cuda(const Tensor &grad_output, const Tensor &softmax_output);
+Tensor scale_tensor_cuda(const Tensor &scores, float scale_factor);
+Tensor scaledDotProductAttention_cuda(const Tensor &q, const Tensor &k, const Tensor &v, float scale_factor, Tensor &out_attention_weights);
 
 #endif // CUDAUTILS_HPP

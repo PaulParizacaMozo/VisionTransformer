@@ -1,14 +1,18 @@
 #include "layers/PatchEmbedding.hpp"
+#include "utils/CudaUtils.hpp"
 #include <stdexcept>
+#include <iostream>
 
 /**
  * @brief Constructor de la capa PatchEmbedding, ahora usando Conv2d.
  */
 PatchEmbedding::PatchEmbedding(size_t image_height, size_t image_width, size_t patch_size, size_t in_channels,
                                size_t embedding_dim)
-    : patch_size(patch_size), embedding_dim(embedding_dim) {
+    : patch_size(patch_size), embedding_dim(embedding_dim)
+{
 
-  if (image_height % patch_size != 0 || image_width % patch_size != 0) {
+  if (image_height % patch_size != 0 || image_width % patch_size != 0)
+  {
     throw std::invalid_argument("Las dimensiones de la imagen deben ser divisibles por el tamaño del parche.");
   }
 
@@ -32,7 +36,8 @@ PatchEmbedding::PatchEmbedding(size_t image_height, size_t image_width, size_t p
 /**
  * @brief Realiza el forward pass usando la capa Conv2d.
  */
-Tensor PatchEmbedding::forward(const Tensor &input, bool isTraining) {
+Tensor PatchEmbedding::forward(const Tensor &input, bool isTraining)
+{
   const size_t batchSize = input.getShape()[0];
 
   // 1. Aplicar la convolución
@@ -49,17 +54,23 @@ Tensor PatchEmbedding::forward(const Tensor &input, bool isTraining) {
   // Queremos {B, N, D} para que la dimensión de la secuencia sea la segunda.
   // {B, D, N} -> {B, N, D}
   x = x.transpose(1, 2);
-  x.contiguous();
+  x = contiguous_cuda(x);
+  // x.contiguous();
+  // if (verify(x, x_cuda, 1e-5f) == false)
+  // {
+  //   std::cerr << "Error en la verificación de contiguous 3d para PatchEmbedding\n";
+  // }
   return x;
 }
 
 /**
  * @brief Realiza el backward pass revirtiendo las operaciones del forward.
  */
-Tensor PatchEmbedding::backward(const Tensor &outputGradient) {
-  Tensor grad_in = outputGradient.isContiguous() ? outputGradient : outputGradient.contiguous();
+Tensor PatchEmbedding::backward(const Tensor &outputGradient)
+{
+  Tensor grad_in = outputGradient.isContiguous() ? outputGradient : contiguous_cuda(outputGradient);
   const size_t batchSize = outputGradient.getShape()[0];
-  
+
   // El gradiente de entrada (outputGradient) tiene la forma {B, N, D}.
   // Debemos revertir las operaciones para obtener un gradiente de la forma {B, C_in, H, W}.
 
@@ -67,11 +78,16 @@ Tensor PatchEmbedding::backward(const Tensor &outputGradient) {
   // {B, N, D} -> {B, D, N}
   Tensor grad = outputGradient.transpose(1, 2);
 
-  grad = grad.contiguous(); // Necesario antes del reshape
+  grad = contiguous_cuda(grad);
+  // grad = grad.contiguous(); // Necesario antes del reshape
+  // if (verify(grad, grad_cuda, 1e-5f) == false)
+  // {
+  //   std::cerr << "Error en la verificación de contiguous 3d para PatchEmbedding backward\n";
+  // }
   // 2. Invertir el aplanamiento (reshape)
   // {B, D, N} -> {B, D, num_patches_h, num_patches_w}
   grad = grad.reshape({batchSize, this->embedding_dim, this->num_patches_h, this->num_patches_w});
-  
+
   // 3. Propagar el gradiente hacia atrás a través de la capa de convolución.
   // La capa Conv2d se encargará de la compleja operación de col2im.
   return this->projectionLayer->backward(grad);
@@ -80,13 +96,15 @@ Tensor PatchEmbedding::backward(const Tensor &outputGradient) {
 /**
  * @brief Delega la obtención de parámetros a la capa Conv2d interna.
  */
-std::vector<Tensor *> PatchEmbedding::getParameters() {
+std::vector<Tensor *> PatchEmbedding::getParameters()
+{
   return this->projectionLayer->getParameters();
 }
 
 /**
  * @brief Delega la obtención de gradientes a la capa Conv2d interna.
  */
-std::vector<Tensor *> PatchEmbedding::getGradients() {
+std::vector<Tensor *> PatchEmbedding::getGradients()
+{
   return this->projectionLayer->getGradients();
 }

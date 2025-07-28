@@ -2,6 +2,7 @@
 #include "core/Tensor.hpp" // Para matrixMultiply y otras operaciones
 #include <stdexcept>
 #include "utils/CudaUtils.hpp"
+#include <iostream>
 
 Dense::Dense(size_t inputSize, size_t outputSize)
 {
@@ -45,8 +46,12 @@ Tensor Dense::forward(const Tensor &input, bool isTraining)
     // Y' = X_2D * W
     Tensor output2D = matrixMultiply_cuda(input2D, this->weights);
     // Y = Y' + b
-    output2D.addBroadcast(this->bias);
-
+    output2D = addBroadcast_cuda(output2D, this->bias);
+    // output2D.addBroadcast(this->bias);
+    // if (verify(output2D, outcuda, 1e-5f) == false)
+    // {
+    //   std::cerr << "Error en la verificación de addBroadcast 3d\n";
+    // }
     // Devolvemos la salida con su forma 3D original
     return output2D.reshape({batchSize, numTokens, this->bias.getShape()[1]});
   }
@@ -55,7 +60,12 @@ Tensor Dense::forward(const Tensor &input, bool isTraining)
   if (inputRank == 2)
   {
     Tensor output = matrixMultiply_cuda(input, this->weights);
-    output.addBroadcast(this->bias);
+    output = addBroadcast_cuda(output, this->bias);
+    // output.addBroadcast(this->bias);
+    // if (verify(output, outcuda, 1e-5f) == false)
+    // {
+    //   std::cerr << "Error en la verificación de addBroadcast 2d\n";
+    // }
     return output;
   }
 
@@ -86,12 +96,22 @@ Tensor Dense::backward(const Tensor &outputGradient)
 
     if (!grad_to_process.isContiguous())
     {
-      grad_to_process = grad_to_process.contiguous();
+      grad_to_process = contiguous_cuda(grad_to_process);
+      // grad_to_process = grad_to_process.contiguous();
+      // if (verify(grad_to_process, grad_cuda, 1e-5f) == false)
+      // {
+      //   std::cerr << "Error en la verificación de contiguous 3d\n";
+      // }
     }
 
     if (!input_to_process.isContiguous())
     {
-      input_to_process = input_to_process.contiguous();
+      input_to_process = contiguous_cuda(input_to_process);
+      // input_to_process = input_to_process.contiguous();
+      // if (verify(input_to_process, input_cuda, 1e-5f) == false)
+      // {
+      //   std::cerr << "Error en la verificación de contiguous 3d\n";
+      // }
     }
 
     grad_to_process = grad_to_process.reshape({batchSize * numTokens, featuresOut});
@@ -100,14 +120,21 @@ Tensor Dense::backward(const Tensor &outputGradient)
 
   // --- Los cálculos de gradientes ahora se hacen siempre en 2D ---
   // Tensor inputTransposed = input_to_process.transpose(0, 1);
-  Tensor inputTransposed = input_to_process.transpose(0, 1).contiguous();
-  // this->weightGradients = matrixMultiply(inputTransposed, grad_to_process);
+  Tensor inputTransposed = input_to_process.transpose(0, 1);
+  inputTransposed = contiguous_cuda(inputTransposed);
+  // inputTransposed = inputTransposed.contiguous();
   this->weightGradients = matrixMultiply_cuda(inputTransposed, grad_to_process);
 
   this->biasGradients = grad_to_process.sum(0);
 
   // Tensor weightsTransposed = this->weights.transpose(0, 1);
-  Tensor weightsTransposed = this->weights.transpose(0, 1).contiguous();
+  Tensor weightsTransposed = this->weights.transpose(0, 1);
+  weightsTransposed = contiguous_cuda(weightsTransposed);
+  // weightsTransposed = weightsTransposed.contiguous();
+  // if (verify(weightsTransposed, weightsTransposed_cuda, 1e-5f) == false)
+  // {
+  //   std::cerr << "Error en la verificación de contiguous 2d\n";
+  // }
   // Tensor inputGradient2D = matrixMultiply(grad_to_process, weightsTransposed);
   Tensor inputGradient2D = matrixMultiply_cuda(grad_to_process, weightsTransposed);
 

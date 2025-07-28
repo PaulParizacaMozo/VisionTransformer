@@ -38,15 +38,21 @@ Tensor Embeddings::forward(const Tensor &input, bool isTraining)
   Tensor cls_token_batch = clsToken.expand({batchSize, 1, embedding_dim});
 
   // 3. Concatenar el CLS token y los parches a lo largo del eje de la secuencia (axis=1)
-  // Tensor embeddings_with_cls = concatenate({cls_token_batch, patch_embeddings}, 1); // -> {B, N+1, D}
+  // Tensor embeddings_with_cls = concatenate({cls_token_batch, patch_embeddings}, 1);       // -> {B, N+1, D}
   Tensor embeddings_with_cls = concatenate_cuda({cls_token_batch, patch_embeddings}, 1); // -> {B, N+1, D}
-  // if (verify(embeddings_with_cls, copy_cu, 1e-5f) == false)
+  // if (verify(embeddings_with_cls, embeddings_with_cls2, 1e-5f) == false)
   // {
   //   std::cerr << "Error en la verificación de embeddings_with_cls\n";
   // }
   // 4. Añadir la codificación posicional
   // addBroadcast suma {1, N+1, D} a cada muestra de {B, N+1, D}
-  embeddings_with_cls.addBroadcast(this->positionalEncoding);
+
+  embeddings_with_cls = addBroadcast_cuda(embeddings_with_cls, this->positionalEncoding);
+  // embeddings_with_cls.addBroadcast(this->positionalEncoding);
+  // if (verify(embeddings_with_cls, outcuda, 1e-5f) == false)
+  // {
+  //   std::cerr << "Error en la verificación de addBroadcast Embedding\n";
+  // }
 
   return embeddings_with_cls;
 }

@@ -1,5 +1,6 @@
 #include "model/Trainer.hpp"
 #include "utils/ModelUtils.hpp"
+#include "utils/CudaUtils.hpp"
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -10,11 +11,13 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "utils/stb_image.h"
 
-Tensor load_image_with_stb(const std::string& path) {
+Tensor load_image_with_stb(const std::string &path)
+{
     int width, height, channels;
 
-    unsigned char* img_data = stbi_load(path.c_str(), &width, &height, &channels, 1); // 1 = grayscale
-    if (!img_data) {
+    unsigned char *img_data = stbi_load(path.c_str(), &width, &height, &channels, 1); // 1 = grayscale
+    if (!img_data)
+    {
         throw std::runtime_error("No se pudo cargar la imagen: " + path);
     }
 
@@ -24,8 +27,10 @@ Tensor load_image_with_stb(const std::string& path) {
     float scale_x = static_cast<float>(width) / target_size;
     float scale_y = static_cast<float>(height) / target_size;
 
-    for (int y = 0; y < target_size; ++y) {
-        for (int x = 0; x < target_size; ++x) {
+    for (int y = 0; y < target_size; ++y)
+    {
+        for (int x = 0; x < target_size; ++x)
+        {
             int src_x = static_cast<int>(x * scale_x);
             int src_y = static_cast<int>(y * scale_y);
             int idx = src_y * width + src_x;
@@ -41,19 +46,22 @@ Tensor load_image_with_stb(const std::string& path) {
     return input;
 }
 
-int main(int argc, char** argv) {
-    if (argc < 2) {
+int main(int argc, char **argv)
+{
+    if (argc < 2)
+    {
         std::cerr << "Uso: " << argv[0] << " <ruta_a_imagen>" << std::endl;
         return 1;
     }
-    try {
-        const std::string model_name = "vit_mnist_30ep_4_8";
+    try
+    {
+        const std::string model_name = "vit_mnist_test";
         const std::string weights_path = model_name + ".weights";
         const std::string config_path = model_name + ".json";
 
         // --- 1. Cargar conifguracion del ViT ---
         std::cout << "Cargando configuración desde: " << config_path << std::endl;
-        ViTConfig loaded_config = ModelUtils::load_config( "models/" + config_path);
+        ViTConfig loaded_config = ModelUtils::load_config("models/" + config_path);
 
         // --- 2. Crear y Cargar los pesos en el modelo ---
         std::cout << "Construyendo modelo con la arquitectura cargada..." << std::endl;
@@ -69,12 +77,14 @@ int main(int argc, char** argv) {
 
         // --- 4. Predicción ---
         Tensor logits = model.forward(input, false);
-        Tensor probabilities = softmax(logits);
+        Tensor probabilities = softmax_cuda(logits);
 
         int predicted_class = -1;
         float max_prob = -std::numeric_limits<float>::infinity();
-        for (size_t j = 0; j < probabilities.getShape()[1]; ++j) {
-            if (probabilities(0, j) > max_prob) {
+        for (size_t j = 0; j < probabilities.getShape()[1]; ++j)
+        {
+            if (probabilities(0, j) > max_prob)
+            {
                 max_prob = probabilities(0, j);
                 predicted_class = j;
             }
@@ -84,8 +94,9 @@ int main(int argc, char** argv) {
         std::cout << "Imagen: " << image_path << "\n";
         std::cout << "Clase predicha: " << predicted_class << "\n";
         std::cout << "Confianza: " << max_prob * 100.0f << "%\n";
-
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         std::cerr << "\nERROR CRÍTICO: " << e.what() << std::endl;
         return 1;
     }
