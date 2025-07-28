@@ -89,10 +89,12 @@ Tensor MultiHeadAttention::forward(const Tensor &input, bool isTraining) {
 
 Tensor MultiHeadAttention::scaledDotProductAttention(const Tensor &q, const Tensor &k, const Tensor &v) {
   // k_transposed -> {B*h, d_h, N}
-  Tensor k_transposed = k.transpose(1, 2);
+  //Tensor k_transposed = k.transpose(1, 2);
+  Tensor k_transposed = k.transpose(1, 2).contiguous();
 
   // scores -> {B*h, N, N}
-  Tensor scores = batchMatrixMultiply(q, k_transposed);
+  //Tensor scores = batchMatrixMultiply(q, k_transposed);
+  Tensor scores = batchMatrixMultiply_cuda(q, k_transposed);
 
   float scale_factor = 1.0f / std::sqrt(static_cast<float>(this->head_dim));
 
@@ -115,7 +117,8 @@ Tensor MultiHeadAttention::scaledDotProductAttention(const Tensor &q, const Tens
   Tensor attention = softmax(scores, 2);
   this->attention_weights = attention;
 
-  return batchMatrixMultiply(attention, v);
+  //return batchMatrixMultiply(attention, v);
+  return batchMatrixMultiply_cuda(attention, v);
 }
 
 // Implementación de softmax (debería ir a un archivo de utilidades)

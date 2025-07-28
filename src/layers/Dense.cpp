@@ -36,10 +36,13 @@ Tensor Dense::forward(const Tensor &input, bool isTraining) {
     size_t batchSize = inputShape[0];
     size_t numTokens = inputShape[1];
     size_t featuresIn = inputShape[2];
-    Tensor input2D = input.reshape({batchSize * numTokens, featuresIn});
-
+    //Tensor input2D = input.reshape({batchSize * numTokens, featuresIn});
+    Tensor input2D = input.isContiguous() ? 
+                     input.reshape({batchSize * numTokens, featuresIn}) :
+                     input.contiguous().reshape({batchSize * numTokens, featuresIn});
     // Y' = X_2D * W
-    Tensor output2D = matrixMultiply(input2D, this->weights);
+    //Tensor output2D = matrixMultiply(input2D, this->weights);
+    Tensor output2D = matrixMultiply_cuda(input2D, this->weights);
     // Y = Y' + b
     output2D.addBroadcast(this->bias);
 
@@ -49,7 +52,9 @@ Tensor Dense::forward(const Tensor &input, bool isTraining) {
 
   // Si la entrada ya es 2D, procedemos como antes
   if (inputRank == 2) {
-    Tensor output = matrixMultiply(input, this->weights);
+    //Tensor output = matrixMultiply(input, this->weights);
+    Tensor contiguous_input = input.isContiguous() ? input : input.contiguous();
+    Tensor output = matrixMultiply_cuda(contiguous_input, this->weights);
     output.addBroadcast(this->bias);
     return output;
   }

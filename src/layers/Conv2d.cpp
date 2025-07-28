@@ -64,7 +64,8 @@ Tensor Conv2d::forward(const Tensor& input, bool isTraining) {
     
     // 4. Convolución como multiplicación de matrices
     // {out_C, patch_dim} @ {patch_dim, B * num_patches} -> {out_C, B * num_patches}
-    Tensor conv_result = matrixMultiply(reshaped_weights, im2col_matrix);
+    //Tensor conv_result = matrixMultiply(reshaped_weights, im2col_matrix);
+    Tensor conv_result = matrixMultiply_cuda(reshaped_weights, im2col_matrix);
 
     // 5. Remodelar la salida y añadir el bias
     // {out_C, B * num_patches} -> {out_C, B, num_patches} -> transpose -> {B, out_C, num_patches}

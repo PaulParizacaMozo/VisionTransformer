@@ -20,7 +20,7 @@ int main() {
 
     TrainerConfig train_config;
     train_config.epochs = 30;
-    train_config.batch_size = 128;// 128
+    train_config.batch_size = 256;// 128
     train_config.learning_rate = 3e-4f;
     train_config.weight_decay = 1e-4f; // 0.01f
     train_config.lr_init = train_config.learning_rate;
@@ -32,7 +32,7 @@ int main() {
     // Para mnist y fashin
     // Entrenamiento + validación
     auto [train_data, valid_data] =
-    load_csv_data_train_val("data/mnist_train.csv",
+    load_csv_data_train_val("data/fashion_train.csv",
                             1.0f,   // sample_frac   → 25 % del total
                             0.80f,   // train_frac    → 80 % de ese 30%
                             0.20f,   // val_frac      → 20 % de ese 30%
@@ -58,7 +58,7 @@ int main() {
     std::cout << "\n¡Entrenamiento completado!" << std::endl;
 
     // --- 5. Guardar el Modelo ---
-    const std::string model_name = "vit_mnist_test";
+    const std::string model_name = "vit_fashion_test";
     const std::string weights_path = model_name + ".weights";
     const std::string config_path = model_name + ".json";
     std::cout << "\nGuardando pesos del modelo entrenado en: " << weights_path << std::endl;
