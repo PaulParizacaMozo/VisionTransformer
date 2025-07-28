@@ -14,5 +14,5 @@ Tensor softmax_cuda(const Tensor &logits, int axis);
 Tensor softmax_backward_cuda(const Tensor &grad_output, const Tensor &softmax_output);
 Tensor scale_tensor_cuda(const Tensor &scores, float scale_factor);
 Tensor scaledDotProductAttention_cuda(const Tensor &q, const Tensor &k, const Tensor &v, float scale_factor, Tensor &out_attention_weights);
-
+Tensor denseForward_cuda(const Tensor &input, const Tensor &weights, const Tensor &bias);
 #endif // CUDAUTILS_HPP

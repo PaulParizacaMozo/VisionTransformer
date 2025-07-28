@@ -1049,3 +1049,120 @@ Tensor scaledDotProductAttention_cuda(const Tensor &q, const Tensor &k, const Te
     CUBLAS_CHECK(cublasDestroy(handle));
     return result;
 }
+Tensor denseForward_cuda(const Tensor &input, const Tensor &weights, const Tensor &bias)
+{
+    const auto &inputShape = input.getShape();
+    size_t inputRank = inputShape.size();
+
+    Tensor input_cpu = input;
+    Tensor reshaped_input;
+    std::vector<size_t> finalOutputShape;
+
+    // --- Paso 1: Preprocesar entrada si es 3D ---
+    if (inputRank == 3)
+    {
+        size_t B = inputShape[0];
+        size_t N = inputShape[1];
+        size_t D = inputShape[2];
+        reshaped_input = input_cpu.reshape({B * N, D});
+        finalOutputShape = {B, N, bias.getShape()[1]};
+    }
+    else if (inputRank == 2)
+    {
+        reshaped_input = input_cpu;
+        finalOutputShape = {inputShape[0], bias.getShape()[1]};
+    }
+    else
+    {
+        throw std::runtime_error("denseForward_cuda: solo se admiten tensores 2D o 3D.");
+    }
+
+    // --- Paso 2: Subir input, weights y bias a la GPU ---
+    float *d_input, *d_weights, *d_bias, *d_output;
+    size_t inputSize = reshaped_input.getSize();
+    size_t weightsSize = weights.getSize();
+    size_t biasSize = bias.getSize();
+    size_t outputSize = reshaped_input.getShape()[0] * weights.getShape()[1];
+
+    CUDA_CHECK(cudaMalloc(&d_input, inputSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_weights, weightsSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_bias, biasSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_output, outputSize * sizeof(float)));
+
+    CUDA_CHECK(cudaMemcpy(d_input, reshaped_input.getData(), inputSize * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_weights, weights.getData(), weightsSize * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_bias, bias.getData(), biasSize * sizeof(float), cudaMemcpyHostToDevice));
+
+    // --- Paso 3: Multiplicación en GPU (X @ W) ---
+    cublasHandle_t handle;
+    CUBLAS_CHECK(cublasCreate(&handle));
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    int M = reshaped_input.getShape()[0];
+    int K = reshaped_input.getShape()[1];
+    int N = weights.getShape()[1];
+
+    // cuBLAS: C^T = B^T @ A^T
+    CUBLAS_CHECK(cublasSgemm(handle,
+                             CUBLAS_OP_N, CUBLAS_OP_N,
+                             N, M, K,
+                             &alpha,
+                             d_weights, N,
+                             d_input, K,
+                             &beta,
+                             d_output, N));
+
+    // --- Paso 4: Sumar bias con broadcasting ---
+
+    float *d_result;
+    CUDA_CHECK(cudaMalloc(&d_result, outputSize * sizeof(float)));
+    const std::vector<size_t> &shapeA = finalOutputShape; // salida sin bias
+    int ndim = shapeA.size();
+
+    if (ndim == 2)
+    {
+        size_t M = shapeA[0], N = shapeA[1];
+        dim3 threads(16, 16);
+        dim3 blocks((M + threads.x - 1) / threads.x, (N + threads.y - 1) / threads.y);
+        addBroadcast2D<<<blocks, threads>>>(d_output, d_bias, d_result, M, N);
+    }
+    else if (ndim == 3)
+    {
+        size_t B = shapeA[0], N = shapeA[1], D = shapeA[2];
+        size_t total = B * N * D;
+        size_t threadsPerBlock = 256;
+        size_t numBlocks = (total + threadsPerBlock - 1) / threadsPerBlock;
+        addBroadcast3D<<<numBlocks, threadsPerBlock>>>(d_output, d_bias, d_result, B, N, D);
+    }
+    else if (ndim == 4)
+    {
+        size_t Nn = shapeA[0], C = shapeA[1], H = shapeA[2], W = shapeA[3];
+        size_t total = Nn * C * H * W;
+        size_t threadsPerBlock = 256;
+        size_t numBlocks = (total + threadsPerBlock - 1) / threadsPerBlock;
+        addBias4D<<<numBlocks, threadsPerBlock>>>(d_output, d_bias, d_result, Nn, C, H, W);
+    }
+    else
+    {
+        throw std::runtime_error("Broadcast de bias no soportado para tensores de " + std::to_string(ndim) + " dimensiones.");
+    }
+    // --- Paso 5: Descargar resultado a CPU ---
+    Tensor result_cpu(finalOutputShape); // CORRECTO
+    CUDA_CHECK(cudaMemcpy(result_cpu.getData(), d_result, outputSize * sizeof(float), cudaMemcpyDeviceToHost));
+
+    // --- Paso 6: Liberar memoria GPU ---
+    CUDA_CHECK(cudaFree(d_input));
+    CUDA_CHECK(cudaFree(d_weights));
+    CUDA_CHECK(cudaFree(d_bias));
+    CUDA_CHECK(cudaFree(d_output));
+    CUDA_CHECK(cudaFree(d_result));
+    CUBLAS_CHECK(cublasDestroy(handle));
+
+    // --- Paso 7: Si era entrada 3D, rehacer reshape final ---
+    if (inputRank == 3)
+    {
+        return result_cpu.reshape(finalOutputShape);
+    }
+    return result_cpu;
+}
