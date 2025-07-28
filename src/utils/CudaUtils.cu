@@ -1166,3 +1166,588 @@ Tensor denseForward_cuda(const Tensor &input, const Tensor &weights, const Tenso
     }
     return result_cpu;
 }
+
+__global__ void tensorAdd_kernel(const float *a, const float *b, float *c, size_t size)
+{
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size)
+    {
+        c[idx] = a[idx] + b[idx];
+    }
+}
+
+__global__ void tensorAdd_strided_kernel(
+    const float *a, const float *b, float *c,
+    const size_t *shape, const size_t *a_strides,
+    const size_t *b_strides, const size_t *c_strides,
+    size_t rank, size_t a_offset, size_t b_offset, size_t c_offset)
+{
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Calcular índice multidimensional
+    size_t total = 1;
+    for (int i = 0; i < rank; ++i)
+        total *= shape[i];
+
+    if (idx >= total)
+        return;
+
+    size_t a_idx = a_offset;
+    size_t b_idx = b_offset;
+    size_t c_idx = c_offset;
+
+    size_t remainder = idx;
+    for (int d = 0; d < rank; ++d)
+    {
+        size_t coord = remainder / shape[d];
+        remainder = remainder % shape[d];
+        a_idx += coord * a_strides[d];
+        b_idx += coord * b_strides[d];
+        c_idx += coord * c_strides[d];
+    }
+
+    c[c_idx] = a[a_idx] + b[b_idx];
+}
+
+Tensor tensorAdd_cuda(const Tensor &a, const Tensor &b)
+{
+    if (a.getShape() != b.getShape())
+        throw std::invalid_argument("tensorAdd_cuda: formas incompatibles");
+
+    size_t size = a.getSize();
+    Tensor result(a.getShape());
+
+    const bool contiguo = a.getDataOffset() == 0 && b.getDataOffset() == 0 && result.getDataOffset() == 0;
+
+    if (contiguo)
+    {
+        // --- CONTIGUO ---
+        float *d_a, *d_b, *d_c;
+        CUDA_CHECK(cudaMalloc(&d_a, sizeof(float) * size));
+        CUDA_CHECK(cudaMalloc(&d_b, sizeof(float) * size));
+        CUDA_CHECK(cudaMalloc(&d_c, sizeof(float) * size));
+
+        CUDA_CHECK(cudaMemcpy(d_a, a.getData(), sizeof(float) * size, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_b, b.getData(), sizeof(float) * size, cudaMemcpyHostToDevice));
+
+        int threads = 256;
+        int blocks = (size + threads - 1) / threads;
+        tensorAdd_kernel<<<blocks, threads>>>(d_a, d_b, d_c, size);
+        CUDA_CHECK(cudaGetLastError());
+
+        CUDA_CHECK(cudaMemcpy(result.getData(), d_c, sizeof(float) * size, cudaMemcpyDeviceToHost));
+
+        CUDA_CHECK(cudaFree(d_a));
+        CUDA_CHECK(cudaFree(d_b));
+        CUDA_CHECK(cudaFree(d_c));
+    }
+    else
+    {
+        // --- NO CONTIGUO ---
+        const auto &shape = a.getShape();
+        const auto &a_strides = a.getStrides();
+        const auto &b_strides = b.getStrides();
+        const auto &c_strides = result.getStrides();
+        const size_t rank = shape.size();
+
+        float *d_a, *d_b, *d_c;
+        size_t *d_shape, *d_a_strides, *d_b_strides, *d_c_strides;
+
+        CUDA_CHECK(cudaMalloc(&d_a, sizeof(float) * a.getSize()));
+        CUDA_CHECK(cudaMalloc(&d_b, sizeof(float) * b.getSize()));
+        CUDA_CHECK(cudaMalloc(&d_c, sizeof(float) * result.getSize()));
+        CUDA_CHECK(cudaMemcpy(d_a, a.getData(), sizeof(float) * a.getSize(), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_b, b.getData(), sizeof(float) * b.getSize(), cudaMemcpyHostToDevice));
+
+        CUDA_CHECK(cudaMalloc(&d_shape, sizeof(size_t) * rank));
+        CUDA_CHECK(cudaMalloc(&d_a_strides, sizeof(size_t) * rank));
+        CUDA_CHECK(cudaMalloc(&d_b_strides, sizeof(size_t) * rank));
+        CUDA_CHECK(cudaMalloc(&d_c_strides, sizeof(size_t) * rank));
+
+        CUDA_CHECK(cudaMemcpy(d_shape, shape.data(), sizeof(size_t) * rank, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_a_strides, a_strides.data(), sizeof(size_t) * rank, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_b_strides, b_strides.data(), sizeof(size_t) * rank, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_c_strides, c_strides.data(), sizeof(size_t) * rank, cudaMemcpyHostToDevice));
+
+        int threads = 256;
+        int blocks = (size + threads - 1) / threads;
+
+        tensorAdd_strided_kernel<<<blocks, threads>>>(
+            d_a, d_b, d_c,
+            d_shape, d_a_strides, d_b_strides, d_c_strides,
+            rank,
+            a.getDataOffset(), b.getDataOffset(), result.getDataOffset());
+        CUDA_CHECK(cudaGetLastError());
+
+        CUDA_CHECK(cudaMemcpy(result.getData(), d_c, sizeof(float) * result.getSize(), cudaMemcpyDeviceToHost));
+
+        CUDA_CHECK(cudaFree(d_a));
+        CUDA_CHECK(cudaFree(d_b));
+        CUDA_CHECK(cudaFree(d_c));
+        CUDA_CHECK(cudaFree(d_shape));
+        CUDA_CHECK(cudaFree(d_a_strides));
+        CUDA_CHECK(cudaFree(d_b_strides));
+        CUDA_CHECK(cudaFree(d_c_strides));
+    }
+
+    return result;
+}
+
+__global__ void tensorSquare_kernel(const float *a, float *c, size_t size)
+{
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size)
+    {
+        c[idx] = a[idx] * a[idx];
+    }
+}
+__global__ void tensorSquare_strided_kernel(
+    const float *a, float *c,
+    const size_t *shape,
+    const size_t *a_strides,
+    const size_t *c_strides,
+    size_t rank,
+    size_t a_offset,
+    size_t c_offset)
+{
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Calcular tamaño total
+    size_t total = 1;
+    for (int i = 0; i < rank; ++i)
+        total *= shape[i];
+
+    if (idx >= total)
+        return;
+
+    size_t a_idx = a_offset;
+    size_t c_idx = c_offset;
+
+    size_t remainder = idx;
+    for (int d = 0; d < rank; ++d)
+    {
+        size_t coord = remainder / shape[d];
+        remainder %= shape[d];
+        a_idx += coord * a_strides[d];
+        c_idx += coord * c_strides[d];
+    }
+
+    c[c_idx] = a[a_idx] * a[a_idx];
+}
+
+Tensor tensorSquare_cuda(const Tensor &a)
+{
+    size_t size = a.getSize();
+    Tensor result(a.getShape());
+
+    const bool contiguo = a.getDataOffset() == 0 && result.getDataOffset() == 0;
+
+    if (contiguo)
+    {
+        // --- CONTIGUO ---
+        float *d_a, *d_c;
+        CUDA_CHECK(cudaMalloc(&d_a, sizeof(float) * size));
+        CUDA_CHECK(cudaMalloc(&d_c, sizeof(float) * size));
+
+        CUDA_CHECK(cudaMemcpy(d_a, a.getData(), sizeof(float) * size, cudaMemcpyHostToDevice));
+
+        int threads = 256;
+        int blocks = (size + threads - 1) / threads;
+        tensorSquare_kernel<<<blocks, threads>>>(d_a, d_c, size);
+        CUDA_CHECK(cudaGetLastError());
+
+        CUDA_CHECK(cudaMemcpy(result.getData(), d_c, sizeof(float) * size, cudaMemcpyDeviceToHost));
+
+        CUDA_CHECK(cudaFree(d_a));
+        CUDA_CHECK(cudaFree(d_c));
+    }
+    else
+    {
+        // --- NO CONTIGUO ---
+        const auto &shape = a.getShape();
+        const auto &a_strides = a.getStrides();
+        const auto &c_strides = result.getStrides();
+        const size_t rank = shape.size();
+
+        float *d_a, *d_c;
+        size_t *d_shape, *d_a_strides, *d_c_strides;
+
+        CUDA_CHECK(cudaMalloc(&d_a, sizeof(float) * a.getSize()));
+        CUDA_CHECK(cudaMalloc(&d_c, sizeof(float) * result.getSize()));
+        CUDA_CHECK(cudaMemcpy(d_a, a.getData(), sizeof(float) * a.getSize(), cudaMemcpyHostToDevice));
+
+        CUDA_CHECK(cudaMalloc(&d_shape, sizeof(size_t) * rank));
+        CUDA_CHECK(cudaMalloc(&d_a_strides, sizeof(size_t) * rank));
+        CUDA_CHECK(cudaMalloc(&d_c_strides, sizeof(size_t) * rank));
+
+        CUDA_CHECK(cudaMemcpy(d_shape, shape.data(), sizeof(size_t) * rank, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_a_strides, a_strides.data(), sizeof(size_t) * rank, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_c_strides, c_strides.data(), sizeof(size_t) * rank, cudaMemcpyHostToDevice));
+
+        int threads = 256;
+        int blocks = (size + threads - 1) / threads;
+
+        tensorSquare_strided_kernel<<<blocks, threads>>>(
+            d_a, d_c,
+            d_shape, d_a_strides, d_c_strides,
+            rank,
+            a.getDataOffset(),
+            result.getDataOffset());
+        CUDA_CHECK(cudaGetLastError());
+
+        CUDA_CHECK(cudaMemcpy(result.getData(), d_c, sizeof(float) * result.getSize(), cudaMemcpyDeviceToHost));
+
+        CUDA_CHECK(cudaFree(d_a));
+        CUDA_CHECK(cudaFree(d_c));
+        CUDA_CHECK(cudaFree(d_shape));
+        CUDA_CHECK(cudaFree(d_a_strides));
+        CUDA_CHECK(cudaFree(d_c_strides));
+    }
+
+    return result;
+}
+
+__global__ void sum2D_kernel(const float *input, float *output,
+                             size_t dim0, size_t dim1,
+                             size_t axis,
+                             size_t in_stride0, size_t in_stride1,
+                             size_t out_stride0, size_t out_stride1,
+                             size_t in_offset, size_t out_offset)
+{
+    size_t i = blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i >= dim0 || j >= dim1)
+        return;
+
+    size_t out_idx = out_offset + i * out_stride0 + j * out_stride1;
+
+    float sum = 0.0f;
+    for (size_t k = 0; k < (axis == 0 ? dim0 : dim1); ++k)
+    {
+        size_t in_i = axis == 0 ? k : i;
+        size_t in_j = axis == 1 ? k : j;
+        size_t in_idx = in_offset + in_i * in_stride0 + in_j * in_stride1;
+        sum += input[in_idx];
+    }
+
+    output[out_idx] = sum;
+}
+
+__global__ void sum3D_kernel(const float *input, float *output,
+                             size_t d0, size_t d1, size_t d2,
+                             size_t axis,
+                             const size_t *in_strides,
+                             const size_t *out_strides,
+                             size_t in_offset, size_t out_offset)
+{
+    size_t i = blockIdx.z * blockDim.z + threadIdx.z;
+    size_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    size_t k = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i >= d0 || j >= d1 || k >= d2)
+        return;
+
+    size_t coord[3] = {i, j, k};
+    coord[axis] = 0;
+
+    size_t out_idx = out_offset;
+    for (int d = 0; d < 3; ++d)
+        out_idx += coord[d] * out_strides[d];
+
+    float sum = 0.0f;
+    for (size_t l = 0; l < (axis == 0 ? d0 : (axis == 1 ? d1 : d2)); ++l)
+    {
+        coord[axis] = l;
+        size_t in_idx = in_offset;
+        for (int d = 0; d < 3; ++d)
+            in_idx += coord[d] * in_strides[d];
+        sum += input[in_idx];
+    }
+
+    output[out_idx] = sum;
+}
+
+__global__ void sum4D_kernel(const float *input, float *output,
+                             size_t d0, size_t d1, size_t d2, size_t d3,
+                             size_t axis,
+                             const size_t *in_strides,
+                             const size_t *out_strides,
+                             size_t in_offset, size_t out_offset)
+{
+    size_t i = blockIdx.z * blockDim.z + threadIdx.z;
+    size_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    size_t k = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i >= d0 || j >= d1 || k >= d2 * d3)
+        return;
+
+    size_t l = k % d3;
+    size_t m = k / d3;
+
+    size_t coord[4] = {i, j, m, l};
+    coord[axis] = 0;
+
+    size_t out_idx = out_offset;
+    for (int d = 0; d < 4; ++d)
+        out_idx += coord[d] * out_strides[d];
+
+    float sum = 0.0f;
+    for (size_t n = 0; n < (axis == 0 ? d0 : (axis == 1 ? d1 : (axis == 2 ? d2 : d3))); ++n)
+    {
+        coord[axis] = n;
+        size_t in_idx = in_offset;
+        for (int d = 0; d < 4; ++d)
+            in_idx += coord[d] * in_strides[d];
+        sum += input[in_idx];
+    }
+
+    output[out_idx] = sum;
+}
+
+Tensor tensorSum_cuda2(const Tensor &a, size_t axis)
+{
+    const auto &shape = a.getShape();
+    const auto &strides = a.getStrides();
+
+    if (axis >= shape.size())
+        throw std::out_of_range("tensorSum_cuda: eje fuera de rango");
+
+    std::vector<size_t> outputShape = shape;
+    outputShape[axis] = 1;
+    Tensor result(outputShape);
+
+    float *d_in, *d_out;
+    size_t rank = shape.size();
+
+    CUDA_CHECK(cudaMalloc(&d_in, sizeof(float) * a.getSize()));
+    CUDA_CHECK(cudaMemcpy(d_in, a.getData(), sizeof(float) * a.getSize(), cudaMemcpyHostToDevice));
+
+    CUDA_CHECK(cudaMalloc(&d_out, sizeof(float) * result.getSize()));
+    CUDA_CHECK(cudaMemset(d_out, 0, sizeof(float) * result.getSize()));
+
+    size_t in_offset = a.getDataOffset();
+    size_t out_offset = result.getDataOffset();
+
+    if (rank == 2)
+    {
+        size_t d0 = shape[0], d1 = shape[1];
+        dim3 block(16, 16);
+        dim3 grid((d1 + 15) / 16, (d0 + 15) / 16);
+
+        sum2D_kernel<<<grid, block>>>(
+            d_in, d_out,
+            d0, d1, axis,
+            strides[0], strides[1],
+            result.getStrides()[0], result.getStrides()[1],
+            in_offset, out_offset);
+    }
+    else if (rank == 3)
+    {
+        size_t *d_in_strides, *d_out_strides;
+        CUDA_CHECK(cudaMalloc(&d_in_strides, sizeof(size_t) * 3));
+        CUDA_CHECK(cudaMalloc(&d_out_strides, sizeof(size_t) * 3));
+        CUDA_CHECK(cudaMemcpy(d_in_strides, strides.data(), sizeof(size_t) * 3, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_out_strides, result.getStrides().data(), sizeof(size_t) * 3, cudaMemcpyHostToDevice));
+
+        dim3 block(4, 4, 4);
+        dim3 grid((shape[2] + 3) / 4, (shape[1] + 3) / 4, (shape[0] + 3) / 4);
+
+        sum3D_kernel<<<grid, block>>>(
+            d_in, d_out,
+            shape[0], shape[1], shape[2],
+            axis,
+            d_in_strides, d_out_strides,
+            in_offset, out_offset);
+
+        CUDA_CHECK(cudaFree(d_in_strides));
+        CUDA_CHECK(cudaFree(d_out_strides));
+    }
+    else if (rank == 4)
+    {
+        size_t *d_in_strides, *d_out_strides;
+        CUDA_CHECK(cudaMalloc(&d_in_strides, sizeof(size_t) * 4));
+        CUDA_CHECK(cudaMalloc(&d_out_strides, sizeof(size_t) * 4));
+        CUDA_CHECK(cudaMemcpy(d_in_strides, strides.data(), sizeof(size_t) * 4, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_out_strides, result.getStrides().data(), sizeof(size_t) * 4, cudaMemcpyHostToDevice));
+
+        size_t d0 = shape[0], d1 = shape[1], d2 = shape[2], d3 = shape[3];
+        dim3 block(8, 4, 4);
+        dim3 grid((d2 * d3 + 7) / 8, (d1 + 3) / 4, (d0 + 3) / 4);
+
+        sum4D_kernel<<<grid, block>>>(
+            d_in, d_out,
+            d0, d1, d2, d3,
+            axis,
+            d_in_strides, d_out_strides,
+            in_offset, out_offset);
+
+        CUDA_CHECK(cudaFree(d_in_strides));
+        CUDA_CHECK(cudaFree(d_out_strides));
+    }
+    else
+    {
+        CUDA_CHECK(cudaFree(d_in));
+        CUDA_CHECK(cudaFree(d_out));
+        throw std::runtime_error("tensorSum_cuda solo implementado para 2D, 3D y 4D.");
+    }
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaMemcpy(result.getData(), d_out, sizeof(float) * result.getSize(), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaFree(d_in));
+    CUDA_CHECK(cudaFree(d_out));
+
+    return result;
+}
+
+Tensor tensorSum_cuda(const Tensor &a, size_t axis)
+{
+    const auto &shape = a.getShape();
+    const auto &strides = a.getStrides();
+
+    if (axis >= shape.size())
+        throw std::out_of_range("tensorSum_cuda: eje fuera de rango");
+
+    std::vector<size_t> outputShape = shape;
+    outputShape[axis] = 1;
+    Tensor result(outputShape);
+
+    size_t rank = shape.size();
+    size_t totalSize = a.getSize();
+    size_t offset = a.getDataOffset();
+
+    float *d_in_raw, *d_out;
+
+    // --- 1. Copiar tensor a GPU (contiguo si necesario) ---
+    CUDA_CHECK(cudaMalloc(&d_out, sizeof(float) * result.getSize()));
+    CUDA_CHECK(cudaMemset(d_out, 0, sizeof(float) * result.getSize()));
+
+    bool isContig = a.isContiguous() && offset == 0;
+
+    if (isContig)
+    {
+        // Ya es contiguo, copiar directamente
+        CUDA_CHECK(cudaMalloc(&d_in_raw, sizeof(float) * totalSize));
+        CUDA_CHECK(cudaMemcpy(d_in_raw, a.getData(), sizeof(float) * totalSize, cudaMemcpyHostToDevice));
+    }
+    else
+    {
+        // NO contiguo → usar copyXD para hacer layout contiguo en GPU
+        CUDA_CHECK(cudaMalloc(&d_in_raw, sizeof(float) * totalSize));
+
+        float *d_temp;
+        size_t fullDataSize = a.getDataPtr()->size();
+        CUDA_CHECK(cudaMalloc(&d_temp, sizeof(float) * fullDataSize));
+        CUDA_CHECK(cudaMemcpy(d_temp, a.getDataPtr()->data(), sizeof(float) * fullDataSize, cudaMemcpyHostToDevice));
+
+        size_t threads = 256;
+        size_t blocks = (totalSize + threads - 1) / threads;
+
+        if (rank == 1)
+        {
+            copy1D<<<blocks, threads>>>(d_temp, d_in_raw, strides[0], offset, shape[0]);
+        }
+        else if (rank == 2)
+        {
+            copy2D<<<blocks, threads>>>(d_temp, d_in_raw, strides[0], strides[1], offset, shape[0], shape[1]);
+        }
+        else if (rank == 3)
+        {
+            copy3D<<<blocks, threads>>>(d_temp, d_in_raw, strides[0], strides[1], strides[2], offset, shape[0], shape[1], shape[2]);
+        }
+        else if (rank == 4)
+        {
+            copy4D<<<blocks, threads>>>(d_temp, d_in_raw, strides[0], strides[1], strides[2], strides[3], offset, shape[0], shape[1], shape[2], shape[3]);
+        }
+        else
+        {
+            CUDA_CHECK(cudaFree(d_temp));
+            CUDA_CHECK(cudaFree(d_in_raw));
+            CUDA_CHECK(cudaFree(d_out));
+            throw std::runtime_error("tensorSum_cuda: ndim > 4 no soportado");
+        }
+
+        CUDA_CHECK(cudaFree(d_temp));
+    }
+
+    // --- 2. Lanzar kernel de suma según dimensiones ---
+    size_t out_offset = result.getDataOffset();
+
+    if (rank == 2)
+    {
+        dim3 block(16, 16);
+        dim3 grid((shape[1] + 15) / 16, (shape[0] + 15) / 16);
+
+        sum2D_kernel<<<grid, block>>>(
+            d_in_raw, d_out,
+            shape[0], shape[1], axis,
+            shape[1], 1, // Input ya contiguo
+            result.getStrides()[0], result.getStrides()[1],
+            0, out_offset);
+    }
+    else if (rank == 3)
+    {
+        size_t *d_in_strides, *d_out_strides;
+        CUDA_CHECK(cudaMalloc(&d_in_strides, sizeof(size_t) * 3));
+        CUDA_CHECK(cudaMalloc(&d_out_strides, sizeof(size_t) * 3));
+
+        std::vector<size_t> input_strides = {shape[1] * shape[2], shape[2], 1}; // contiguo layout
+        CUDA_CHECK(cudaMemcpy(d_in_strides, input_strides.data(), sizeof(size_t) * 3, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_out_strides, result.getStrides().data(), sizeof(size_t) * 3, cudaMemcpyHostToDevice));
+
+        dim3 block(4, 4, 4);
+        dim3 grid((shape[2] + 3) / 4, (shape[1] + 3) / 4, (shape[0] + 3) / 4);
+
+        sum3D_kernel<<<grid, block>>>(
+            d_in_raw, d_out,
+            shape[0], shape[1], shape[2],
+            axis,
+            d_in_strides, d_out_strides,
+            0, out_offset);
+
+        CUDA_CHECK(cudaFree(d_in_strides));
+        CUDA_CHECK(cudaFree(d_out_strides));
+    }
+    else if (rank == 4)
+    {
+        size_t *d_in_strides, *d_out_strides;
+        CUDA_CHECK(cudaMalloc(&d_in_strides, sizeof(size_t) * 4));
+        CUDA_CHECK(cudaMalloc(&d_out_strides, sizeof(size_t) * 4));
+
+        std::vector<size_t> input_strides = {
+            shape[1] * shape[2] * shape[3],
+            shape[2] * shape[3],
+            shape[3],
+            1};
+        CUDA_CHECK(cudaMemcpy(d_in_strides, input_strides.data(), sizeof(size_t) * 4, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_out_strides, result.getStrides().data(), sizeof(size_t) * 4, cudaMemcpyHostToDevice));
+
+        dim3 block(8, 4, 4);
+        dim3 grid((shape[2] * shape[3] + 7) / 8, (shape[1] + 3) / 4, (shape[0] + 3) / 4);
+
+        sum4D_kernel<<<grid, block>>>(
+            d_in_raw, d_out,
+            shape[0], shape[1], shape[2], shape[3],
+            axis,
+            d_in_strides, d_out_strides,
+            0, out_offset);
+
+        CUDA_CHECK(cudaFree(d_in_strides));
+        CUDA_CHECK(cudaFree(d_out_strides));
+    }
+    else
+    {
+        CUDA_CHECK(cudaFree(d_in_raw));
+        CUDA_CHECK(cudaFree(d_out));
+        throw std::runtime_error("tensorSum_cuda solo implementado para 2D, 3D y 4D.");
+    }
+
+    // --- 3. Copiar resultado final a CPU ---
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaMemcpy(result.getData(), d_out, sizeof(float) * result.getSize(), cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_in_raw));
+    CUDA_CHECK(cudaFree(d_out));
+
+    return result;
+}

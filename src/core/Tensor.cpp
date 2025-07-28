@@ -1,4 +1,5 @@
 #include "core/Tensor.hpp"
+#include "utils/CudaUtils.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -258,48 +259,48 @@ Tensor Tensor::transpose(size_t dim1, size_t dim2) const
 
 Tensor Tensor::contiguous() const
 {
-  if (isContiguous() && dataOffset == 0)
-  {
-    return *this;
-  }
+  // if (isContiguous() && dataOffset == 0)
+  // {
+  //   return *this;
+  // }
 
   Tensor new_tensor(this->shape);
-  // Usa los operadores () que ya saben manejar strides para copiar
-  // del tensor no contiguo al nuevo tensor contiguo.
-  if (shape.size() == 4)
-  {
-#pragma omp parallel for collapse(4)
-    for (size_t d0 = 0; d0 < shape[0]; ++d0)
-      for (size_t d1 = 0; d1 < shape[1]; ++d1)
-        for (size_t d2 = 0; d2 < shape[2]; ++d2)
-          for (size_t d3 = 0; d3 < shape[3]; ++d3)
-            new_tensor(d0, d1, d2, d3) = (*this)(d0, d1, d2, d3);
-  }
-  else if (shape.size() == 3)
-  {
-#pragma omp parallel for collapse(3)
-    for (size_t d0 = 0; d0 < shape[0]; ++d0)
-      for (size_t d1 = 0; d1 < shape[1]; ++d1)
-        for (size_t d2 = 0; d2 < shape[2]; ++d2)
-          new_tensor(d0, d1, d2) = (*this)(d0, d1, d2);
-  } // Añadir más casos si es necesario
-  else if (shape.size() == 2)
-  {
-#pragma omp parallel for collapse(2)
-    for (size_t d0 = 0; d0 < shape[0]; ++d0)
-      for (size_t d1 = 0; d1 < shape[1]; ++d1)
-        new_tensor(d0, d1) = (*this)(d0, d1);
-  }
-  else if (shape.size() == 1)
-  {
-#pragma omp parallel for
-    for (size_t d0 = 0; d0 < shape[0]; ++d0)
-      new_tensor(d0) = (*this)(d0);
-  }
-  else
-  {
-    throw std::runtime_error("contiguous() no implementado para este rank.");
-  }
+  //   // Usa los operadores () que ya saben manejar strides para copiar
+  //   // del tensor no contiguo al nuevo tensor contiguo.
+  //   if (shape.size() == 4)
+  //   {
+  // #pragma omp parallel for collapse(4)
+  //     for (size_t d0 = 0; d0 < shape[0]; ++d0)
+  //       for (size_t d1 = 0; d1 < shape[1]; ++d1)
+  //         for (size_t d2 = 0; d2 < shape[2]; ++d2)
+  //           for (size_t d3 = 0; d3 < shape[3]; ++d3)
+  //             new_tensor(d0, d1, d2, d3) = (*this)(d0, d1, d2, d3);
+  //   }
+  //   else if (shape.size() == 3)
+  //   {
+  // #pragma omp parallel for collapse(3)
+  //     for (size_t d0 = 0; d0 < shape[0]; ++d0)
+  //       for (size_t d1 = 0; d1 < shape[1]; ++d1)
+  //         for (size_t d2 = 0; d2 < shape[2]; ++d2)
+  //           new_tensor(d0, d1, d2) = (*this)(d0, d1, d2);
+  //   } // Añadir más casos si es necesario
+  //   else if (shape.size() == 2)
+  //   {
+  // #pragma omp parallel for collapse(2)
+  //     for (size_t d0 = 0; d0 < shape[0]; ++d0)
+  //       for (size_t d1 = 0; d1 < shape[1]; ++d1)
+  //         new_tensor(d0, d1) = (*this)(d0, d1);
+  //   }
+  //   else if (shape.size() == 1)
+  //   {
+  // #pragma omp parallel for
+  //     for (size_t d0 = 0; d0 < shape[0]; ++d0)
+  //       new_tensor(d0) = (*this)(d0);
+  //   }
+  //   else
+  //   {
+  //     throw std::runtime_error("contiguous() no implementado para este rank.");
+  //   }
 
   return new_tensor;
 }
@@ -373,91 +374,101 @@ void Tensor::copyFrom(const Tensor &src)
 /** @brief Suma dos tensores elemento por elemento. Deben tener la misma forma. */
 Tensor Tensor::operator+(const Tensor &other) const
 {
-  if (this->shape != other.getShape())
-  {
-    throw std::invalid_argument("Los tensores deben tener la misma forma para la suma. " + this->shapeToString() + " vs " +
-                                other.shapeToString());
-  }
+  return tensorAdd_cuda(*this, other);
+  //   if (this->shape != other.getShape())
+  //   {
+  //     throw std::invalid_argument("Los tensores deben tener la misma forma para la suma. " + this->shapeToString() + " vs " +
+  //                                 other.shapeToString());
+  //   }
 
-  Tensor result(this->shape);
+  //   Tensor result(this->shape);
 
-  // Iteramos sobre el tensor de salida y calculamos cada valor.
-  // Esto funciona para cualquier tensor (contiguo o no) porque usamos los operadores ().
-  if (this->shape.size() == 2)
-  {
-#pragma omp parallel for collapse(2)
-    for (size_t i = 0; i < this->shape[0]; ++i)
-    {
-      for (size_t j = 0; j < this->shape[1]; ++j)
-      {
-        result(i, j) = (*this)(i, j) + other(i, j);
-      }
-    }
-  }
-  else if (this->shape.size() == 3)
-  {
-#pragma omp parallel for collapse(3)
-    for (size_t i = 0; i < this->shape[0]; ++i)
-    {
-      for (size_t j = 0; j < this->shape[1]; ++j)
-      {
-        for (size_t k = 0; k < this->shape[2]; ++k)
-        {
-          result(i, j, k) = (*this)(i, j, k) + other(i, j, k);
-        }
-      }
-    }
-  }
-  else
-  { // Fallback para 1D u otras formas
-    for (size_t i = 0; i < this->totalSize; ++i)
-    {
-      // Esto solo es correcto si el tensor es contiguo.
-      // Para una versión general se necesitaría un iterador de N-dimensiones.
-      result.getData()[i] = this->getData()[dataOffset + i] + other.getData()[other.dataOffset + i];
-    }
-  }
+  //   // Iteramos sobre el tensor de salida y calculamos cada valor.
+  //   // Esto funciona para cualquier tensor (contiguo o no) porque usamos los operadores ().
+  //   if (this->shape.size() == 2)
+  //   {
+  // #pragma omp parallel for collapse(2)
+  //     for (size_t i = 0; i < this->shape[0]; ++i)
+  //     {
+  //       for (size_t j = 0; j < this->shape[1]; ++j)
+  //       {
+  //         result(i, j) = (*this)(i, j) + other(i, j);
+  //       }
+  //     }
+  //   }
+  //   else if (this->shape.size() == 3)
+  //   {
+  // #pragma omp parallel for collapse(3)
+  //     for (size_t i = 0; i < this->shape[0]; ++i)
+  //     {
+  //       for (size_t j = 0; j < this->shape[1]; ++j)
+  //       {
+  //         for (size_t k = 0; k < this->shape[2]; ++k)
+  //         {
+  //           result(i, j, k) = (*this)(i, j, k) + other(i, j, k);
+  //         }
+  //       }
+  //     }
+  //   }
+  //   else
+  //   { // Fallback para 1D u otras formas
+  //     for (size_t i = 0; i < this->totalSize; ++i)
+  //     {
+  //       // Esto solo es correcto si el tensor es contiguo.
+  //       // Para una versión general se necesitaría un iterador de N-dimensiones.
+  //       result.getData()[i] = this->getData()[dataOffset + i] + other.getData()[other.dataOffset + i];
+  //     }
+  //   }
+  //   if (verify(result, r_cuda, 1e-5f) == false)
+  //   {
+  //     std::cerr << "Error en la verificación de addBroadcast Embedding\n";
+  //   }
 
-  return result;
+  // return result;
 }
 
 /** @brief Devuelve un nuevo tensor con el cuadrado de cada elemento. */
 Tensor Tensor::square() const
 {
+  //   Tensor r_cuda = tensorSquare_cuda(*this);
   Tensor result(this->shape);
 
-  if (this->shape.size() == 2)
-  {
-#pragma omp parallel for collapse(2)
-    for (size_t i = 0; i < this->shape[0]; ++i)
-    {
-      for (size_t j = 0; j < this->shape[1]; ++j)
-      {
-        result(i, j) = (*this)(i, j) * (*this)(i, j);
-      }
-    }
-  }
-  else if (this->shape.size() == 3)
-  {
-#pragma omp parallel for collapse(3)
-    for (size_t i = 0; i < this->shape[0]; ++i)
-    {
-      for (size_t j = 0; j < this->shape[1]; ++j)
-      {
-        for (size_t k = 0; k < this->shape[2]; ++k)
-        {
-          result(i, j, k) = (*this)(i, j, k) * (*this)(i, j, k);
-        }
-      }
-    }
-  }
-  else
-  { // Fallback
-    for (size_t i = 0; i < this->totalSize; ++i)
-    {
-      result.getData()[i] = this->getData()[dataOffset + i] * this->getData()[dataOffset + i];
-    }
-  }
+  //   if (this->shape.size() == 2)
+  //   {
+  // #pragma omp parallel for collapse(2)
+  //     for (size_t i = 0; i < this->shape[0]; ++i)
+  //     {
+  //       for (size_t j = 0; j < this->shape[1]; ++j)
+  //       {
+  //         result(i, j) = (*this)(i, j) * (*this)(i, j);
+  //       }
+  //     }
+  //   }
+  //   else if (this->shape.size() == 3)
+  //   {
+  // #pragma omp parallel for collapse(3)
+  //     for (size_t i = 0; i < this->shape[0]; ++i)
+  //     {
+  //       for (size_t j = 0; j < this->shape[1]; ++j)
+  //       {
+  //         for (size_t k = 0; k < this->shape[2]; ++k)
+  //         {
+  //           result(i, j, k) = (*this)(i, j, k) * (*this)(i, j, k);
+  //         }
+  //       }
+  //     }
+  //   }
+  //   else
+  //   { // Fallback
+  //     for (size_t i = 0; i < this->totalSize; ++i)
+  //     {
+  //       result.getData()[i] = this->getData()[dataOffset + i] * this->getData()[dataOffset + i];
+  //     }
+  //   }
+  //   if (verify(result, r_cuda, 1e-5f) == false)
+  //   {
+  //     std::cerr << "Error en la verificación de square\n";
+  //   }
   return result;
 }
 
@@ -467,87 +478,100 @@ Tensor Tensor::square() const
  */
 Tensor Tensor::sum(size_t axis) const
 {
-  if (axis >= shape.size())
-  {
-    throw std::out_of_range("Eje para sum() fuera de rango.");
-  }
+  Tensor r_cuda = tensorSum_cuda(*this, axis);
+  return r_cuda;
+  //   if (axis >= shape.size())
+  //   {
+  //     throw std::out_of_range("Eje para sum() fuera de rango.");
+  //   }
 
-  std::vector<size_t> outputShape = this->shape;
-  outputShape[axis] = 1;
-  Tensor result(outputShape); // Se inicializa a ceros
+  //   std::vector<size_t> outputShape = this->shape;
+  //   outputShape[axis] = 1;
+  //   Tensor result(outputShape); // Se inicializa a ceros
 
-  // Bucle genérico que itera sobre la forma de salida
-  // y suma a lo largo del eje colapsado de la entrada.
-  // Esto es más lento pero funciona para cualquier dimensionalidad.
-  if (shape.size() == 4)
-  {
-#pragma omp parallel for collapse(4)
-    for (size_t d0 = 0; d0 < outputShape[0]; ++d0)
-    {
-      for (size_t d1 = 0; d1 < outputShape[1]; ++d1)
-      {
-        for (size_t d2 = 0; d2 < outputShape[2]; ++d2)
-        {
-          for (size_t d3 = 0; d3 < outputShape[3]; ++d3)
-          {
-            float current_sum = 0.0f;
-            for (size_t i = 0; i < this->shape[axis]; ++i)
-            {
-              std::vector<size_t> idx = {d0, d1, d2, d3};
-              idx[axis] = i;
-              current_sum += (*this)(idx[0], idx[1], idx[2], idx[3]);
-            }
-            result(d0, d1, d2, d3) = current_sum;
-          }
-        }
-      }
-    }
-  }
-  else if (shape.size() == 2)
-  {
-#pragma omp parallel for collapse(2)
-    for (size_t i = 0; i < outputShape[0]; ++i)
-    {
-      for (size_t j = 0; j < outputShape[1]; ++j)
-      {
-        float current_sum = 0.0f;
-        for (size_t k = 0; k < this->shape[axis]; ++k)
-        {
-          std::vector<size_t> idx = {i, j};
-          idx[axis] = k;
-          current_sum += (*this)(idx[0], idx[1]);
-        }
-        result(i, j) = current_sum;
-      }
-    }
-  }
-  else if (shape.size() == 3)
-  {
-#pragma omp parallel for collapse(3)
-    for (size_t i = 0; i < outputShape[0]; ++i)
-    {
-      for (size_t j = 0; j < outputShape[1]; ++j)
-      {
-        for (size_t k = 0; k < outputShape[2]; ++k)
-        {
-          float current_sum = 0.0f;
-          for (size_t l = 0; l < this->shape[axis]; ++l)
-          {
-            std::vector<size_t> idx = {i, j, k};
-            idx[axis] = l;
-            current_sum += (*this)(idx[0], idx[1], idx[2]);
-          }
-          result(i, j, k) = current_sum;
-        }
-      }
-    }
-  }
-  else
-  {
-    throw std::runtime_error("sum() solo está implementado para 2D y 3D por ahora.");
-  }
+  //   // Bucle genérico que itera sobre la forma de salida
+  //   // y suma a lo largo del eje colapsado de la entrada.
+  //   // Esto es más lento pero funciona para cualquier dimensionalidad.
+  //   if (shape.size() == 4)
+  //   {
+  // #pragma omp parallel for collapse(4)
+  //     for (size_t d0 = 0; d0 < outputShape[0]; ++d0)
+  //     {
+  //       for (size_t d1 = 0; d1 < outputShape[1]; ++d1)
+  //       {
+  //         for (size_t d2 = 0; d2 < outputShape[2]; ++d2)
+  //         {
+  //           for (size_t d3 = 0; d3 < outputShape[3]; ++d3)
+  //           {
+  //             float current_sum = 0.0f;
+  //             for (size_t i = 0; i < this->shape[axis]; ++i)
+  //             {
+  //               std::vector<size_t> idx = {d0, d1, d2, d3};
+  //               idx[axis] = i;
+  //               current_sum += (*this)(idx[0], idx[1], idx[2], idx[3]);
+  //             }
+  //             result(d0, d1, d2, d3) = current_sum;
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+  //   else if (shape.size() == 2)
+  //   {
+  // #pragma omp parallel for collapse(2)
+  //     for (size_t i = 0; i < outputShape[0]; ++i)
+  //     {
+  //       for (size_t j = 0; j < outputShape[1]; ++j)
+  //       {
+  //         float current_sum = 0.0f;
+  //         for (size_t k = 0; k < this->shape[axis]; ++k)
+  //         {
+  //           std::vector<size_t> idx = {i, j};
+  //           idx[axis] = k;
+  //           current_sum += (*this)(idx[0], idx[1]);
+  //         }
+  //         result(i, j) = current_sum;
+  //       }
+  //     }
+  //   }
+  //   else if (shape.size() == 3)
+  //   {
+  // #pragma omp parallel for collapse(3)
+  //     for (size_t i = 0; i < outputShape[0]; ++i)
+  //     {
+  //       for (size_t j = 0; j < outputShape[1]; ++j)
+  //       {
+  //         for (size_t k = 0; k < outputShape[2]; ++k)
+  //         {
+  //           float current_sum = 0.0f;
+  //           for (size_t l = 0; l < this->shape[axis]; ++l)
+  //           {
+  //             std::vector<size_t> idx = {i, j, k};
+  //             idx[axis] = l;
+  //             current_sum += (*this)(idx[0], idx[1], idx[2]);
+  //           }
+  //           result(i, j, k) = current_sum;
+  //         }
+  //       }
+  //     }
+  //   }
+  //   else
+  //   {
+  //     throw std::runtime_error("sum() solo está implementado para 2D y 3D por ahora.");
+  //   }
+  //   if (verify(result, r_cuda, 1e-5f) == false)
+  //   {
+  //     result.printDebugInfo("Result CPU");
+  //     r_cuda.printDebugInfo("Result CUDA");
+  //     if (shape.size() == 2)
+  //       std::cerr << "Error en la verificación de sum para 2D - Axis: " << axis << "\n";
+  //     else if (shape.size() == 3)
+  //       std::cerr << "Error en la verificación de sum para 3D - Axis: " << axis << "\n";
+  //     else
+  //       std::cerr << "Error en la verificación de sum para 4D - Axis: " << axis << "\n";
+  //   }
 
-  return result;
+  //   return result;
 }
 
 /**

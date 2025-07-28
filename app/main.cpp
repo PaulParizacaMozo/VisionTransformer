@@ -20,7 +20,7 @@ int main()
 
     TrainerConfig train_config;
     train_config.epochs = 10;
-    train_config.batch_size = 512; // 128
+    train_config.batch_size = 256; // 128
     train_config.learning_rate = 3e-4f;
     train_config.weight_decay = 1e-4f; // 0.01f
     train_config.lr_init = train_config.learning_rate;
