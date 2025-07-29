@@ -6,6 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+#include <numeric>
 
 // --- Funciones Auxiliares (privadas a este archivo) ---
 namespace {
@@ -158,4 +159,43 @@ load_csv_data_train_val(const std::string& filePath,
     Tensor y_val   = y_all.slice(0, N_train, N_val);
 
     return { {X_train, y_train}, {X_val, y_val} };
+}
+
+
+
+std::vector<float> compute_class_weights(const Tensor& y_onehot) {
+  const size_t num_samples = y_onehot.getShape()[0];
+  const size_t num_classes = y_onehot.getShape()[1];
+
+  // 1. Contar ocurrencias por clase
+  std::vector<size_t> class_counts(num_classes, 0);
+  for (size_t i = 0; i < num_samples; ++i) {
+    for (size_t j = 0; j < num_classes; ++j) {
+      if (y_onehot(i, j) == 1.0f) {
+        class_counts[j]++;
+        break;
+      }
+    }
+  }
+
+  // 2. Calcular pesos inversamente proporcionales a la frecuencia
+  std::vector<float> class_weights(num_classes, 0.0f);
+  float total_samples = static_cast<float>(num_samples);
+  for (size_t i = 0; i < num_classes; ++i) {
+    class_weights[i] = total_samples / (num_classes * static_cast<float>(class_counts[i]));
+  }
+
+  // 3. Normalizar para que sumen 1
+  float sum_weights = std::accumulate(class_weights.begin(), class_weights.end(), 0.0f);
+  for (float &w : class_weights) {
+    w /= sum_weights;
+  }
+
+  return class_weights;
+}
+
+void print_classweights(const std::vector<float>& class_weights){
+  for(size_t i = 0; i< class_weights.size(); i++){
+    std::cout << "Clase "<< i << ": "<< class_weights[i]<<std::endl;
+  }
 }

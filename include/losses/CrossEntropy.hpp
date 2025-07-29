@@ -45,12 +45,15 @@ public:
    */
   Tensor backward(const Tensor &yPred, const Tensor &yTrue) override;
 
+  void setClassWeights(const std::vector<float>& weights) { class_weights = weights; }
+
 private:
   /**
    * @brief Almacena las probabilidades calculadas por Softmax en `calculate()`.
    *        Se reutiliza en `backward()` para evitar recalcular Softmax.
    */
   Tensor softmaxOutput;
+  std::vector<float> class_weights; // ponderacion de clases
 };
 
 #endif // CROSSENTROPY_HPP

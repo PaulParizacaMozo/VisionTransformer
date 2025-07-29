@@ -13,7 +13,7 @@ int main() {
     model_config.num_layers = 8; // 6 
     model_config.num_heads = 8;
     model_config.patch_size = 28;
-    model_config.num_classes = 10;
+    model_config.num_classes = 8;
     model_config.in_channels = 1;
     model_config.mlp_hidden_dim = model_config.embedding_dim * 4;
     model_config.dropout_rate = 0.2;
@@ -47,10 +47,13 @@ int main() {
        load_csv_data("data/bloodmnist_train_gray.csv", 1.00f, 1, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
     auto valid_data =
        load_csv_data("data/bloodmnist_val_gray.csv", 1.00f, 1, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
-                            
+
+    auto class_weights = compute_class_weights(train_data.second);
+    print_classweights(class_weights);
+    
     // --- 3. Crear Modelo y Entrenador ---
     VisionTransformer model(model_config);
-    Trainer trainer(model, train_config);
+    Trainer trainer(model, train_config, class_weights);
 
     // --- 4. Ejecutar el Entrenamiento y la Evaluación ---
     trainer.train(train_data, valid_data); // test_data

@@ -22,7 +22,7 @@ struct TrainerConfig {
 class Trainer {
 public:
   // Trainer(const ViTConfig &model_config, const TrainerConfig &train_config);
-  Trainer(VisionTransformer &model, const TrainerConfig &train_config);
+  Trainer(VisionTransformer &model, const TrainerConfig &train_config, const std::vector<float> &class_weights = std::vector<float>{});
   /**
    * @brief Ejecuta el bucle de entrenamiento completo.
    * @param train_data Par {Imágenes, Etiquetas} para el entrenamiento.
