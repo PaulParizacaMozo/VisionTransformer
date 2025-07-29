@@ -1751,188 +1751,6 @@ Tensor tensorSum_cuda(const Tensor &a, size_t axis)
 
     return result;
 }
-__global__ void im2col_kernel(
-    const float *input,
-    float *output,
-    size_t B, size_t C, size_t H, size_t W,
-    size_t KH, size_t KW,
-    size_t OH, size_t OW,
-    size_t stride, size_t padding)
-{
-    int col_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total_cols = B * OH * OW;
-    if (col_idx >= total_cols)
-        return;
-
-    int w_out = col_idx % OW;
-    int h_out = (col_idx / OW) % OH;
-    int b = col_idx / (OH * OW);
-
-    int kernel_area = C * KH * KW;
-
-    for (int k = 0; k < kernel_area; ++k)
-    {
-        int c = k / (KH * KW);
-        int kh = (k / KW) % KH;
-        int kw = k % KW;
-
-        int h_in = h_out * stride + kh - padding;
-        int w_in = w_out * stride + kw - padding;
-
-        float val = 0.0f;
-        if (h_in >= 0 && h_in < H && w_in >= 0 && w_in < W)
-        {
-            int input_idx = ((b * C + c) * H + h_in) * W + w_in;
-            val = input[input_idx];
-        }
-
-        int out_idx = k * total_cols + col_idx;
-        output[out_idx] = val;
-    }
-}
-
-Tensor im2col_cuda(const Tensor &input, size_t kernel_size, size_t stride, size_t padding)
-{
-    const auto &shape = input.getShape(); // [B, C, H, W]
-    if (shape.size() != 4)
-        throw std::invalid_argument("im2col_cuda: input debe ser un tensor 4D");
-
-    size_t B = shape[0];
-    size_t C = shape[1];
-    size_t H = shape[2];
-    size_t W = shape[3];
-
-    size_t OH = (H + 2 * padding - kernel_size) / stride + 1;
-    size_t OW = (W + 2 * padding - kernel_size) / stride + 1;
-
-    size_t col_rows = C * kernel_size * kernel_size;
-    size_t col_cols = B * OH * OW;
-
-    Tensor result({col_rows, col_cols});
-
-    // --- Copiar input a GPU ---
-    float *d_input, *d_output;
-    size_t input_size = input.getSize();
-    CUDA_CHECK(cudaMalloc(&d_input, sizeof(float) * input_size));
-    CUDA_CHECK(cudaMemcpy(d_input, input.getData(), sizeof(float) * input_size, cudaMemcpyHostToDevice));
-
-    CUDA_CHECK(cudaMalloc(&d_output, sizeof(float) * col_rows * col_cols));
-    CUDA_CHECK(cudaMemset(d_output, 0, sizeof(float) * col_rows * col_cols));
-
-    // --- Lanzar kernel ---
-    int threads = 256;
-    int blocks = (col_cols + threads - 1) / threads;
-
-    im2col_kernel<<<blocks, threads>>>(
-        d_input, d_output,
-        B, C, H, W,
-        kernel_size, kernel_size,
-        OH, OW,
-        stride, padding);
-
-    CUDA_CHECK(cudaGetLastError());
-
-    // --- Copiar resultado a CPU ---
-    CUDA_CHECK(cudaMemcpy(result.getData(), d_output, sizeof(float) * col_rows * col_cols, cudaMemcpyDeviceToHost));
-
-    CUDA_CHECK(cudaFree(d_input));
-    CUDA_CHECK(cudaFree(d_output));
-
-    return result;
-}
-__global__ void col2im_kernel(
-    const float *col_data,
-    float *img_data,
-    size_t B, size_t C, size_t H, size_t W,
-    size_t KH, size_t KW,
-    size_t OH, size_t OW,
-    size_t stride, size_t padding)
-{
-    int col_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total_cols = B * OH * OW;
-    if (col_idx >= total_cols)
-        return;
-
-    int w_out = col_idx % OW;
-    int h_out = (col_idx / OW) % OH;
-    int b = col_idx / (OH * OW);
-
-    int kernel_area = C * KH * KW;
-
-    for (int k = 0; k < kernel_area; ++k)
-    {
-        int c = k / (KH * KW);
-        int kh = (k / KW) % KH;
-        int kw = k % KW;
-
-        int h_in = h_out * stride + kh - padding;
-        int w_in = w_out * stride + kw - padding;
-
-        if (h_in >= 0 && h_in < H && w_in >= 0 && w_in < W)
-        {
-            int col_matrix_idx = k * total_cols + col_idx;
-            int img_idx = ((b * C + c) * H + h_in) * W + w_in;
-
-            atomicAdd(&img_data[img_idx], col_data[col_matrix_idx]);
-        }
-    }
-}
-
-Tensor col2im_cuda(const Tensor &col_matrix, const std::vector<size_t> &output_shape,
-                   size_t kernel_size, size_t stride, size_t padding)
-{
-    if (output_shape.size() != 4)
-        throw std::invalid_argument("col2im_cuda: output_shape debe ser 4D.");
-
-    size_t B = output_shape[0];
-    size_t C = output_shape[1];
-    size_t H = output_shape[2];
-    size_t W = output_shape[3];
-
-    size_t OH = (H + 2 * padding - kernel_size) / stride + 1;
-    size_t OW = (W + 2 * padding - kernel_size) / stride + 1;
-
-    const size_t col_rows = col_matrix.getShape()[0]; // C * K * K
-    const size_t col_cols = col_matrix.getShape()[1]; // B * OH * OW
-
-    // Sanity check
-    if (col_rows != C * kernel_size * kernel_size || col_cols != B * OH * OW)
-        throw std::runtime_error("col2im_cuda: dimensiones incompatibles.");
-
-    // --- Crear tensor de salida ---
-    Tensor output(output_shape);
-    output.fill(0.0f); // Aseguramos acumulación correcta
-
-    // --- GPU memory allocation ---
-    float *d_col, *d_out;
-    CUDA_CHECK(cudaMalloc(&d_col, sizeof(float) * col_matrix.getSize()));
-    CUDA_CHECK(cudaMemcpy(d_col, col_matrix.getData(), sizeof(float) * col_matrix.getSize(), cudaMemcpyHostToDevice));
-
-    CUDA_CHECK(cudaMalloc(&d_out, sizeof(float) * output.getSize()));
-    CUDA_CHECK(cudaMemset(d_out, 0, sizeof(float) * output.getSize()));
-
-    // --- Kernel config ---
-    int threads = 256;
-    int blocks = (col_cols + threads - 1) / threads;
-
-    col2im_kernel<<<blocks, threads>>>(
-        d_col, d_out,
-        B, C, H, W,
-        kernel_size, kernel_size,
-        OH, OW,
-        stride, padding);
-
-    CUDA_CHECK(cudaGetLastError());
-
-    // --- Copiar resultado a CPU ---
-    CUDA_CHECK(cudaMemcpy(output.getData(), d_out, sizeof(float) * output.getSize(), cudaMemcpyDeviceToHost));
-
-    // --- Cleanup ---
-    CUDA_CHECK(cudaFree(d_col));
-    CUDA_CHECK(cudaFree(d_out));
-
-    return output;
-}
 __global__ void dropout_backward_kernel(const float *grad_out, const float *mask, float *grad_in, size_t totalSize)
 {
     size_t i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -2116,4 +1934,287 @@ LayerNormResult layernorm_forward_cuda(const Tensor &input,
     }
 
     return {input2D, output.reshape(shape), normalized, mean, invStd};
+}
+
+__global__ void im2col_kernel_strided(
+    const float *input,
+    float *col,
+    size_t offset,
+    size_t s_batch, size_t s_channel, size_t s_y, size_t s_x,
+    size_t batch_size, size_t channels,
+    size_t height, size_t width,
+    size_t kernel_size, size_t stride, size_t padding,
+    size_t out_h, size_t out_w)
+{
+    size_t col_index = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t total_cols = batch_size * out_h * out_w;
+    if (col_index >= total_cols)
+        return;
+
+    size_t w_out = col_index % out_w;
+    size_t h_out = (col_index / out_w) % out_h;
+    size_t b = col_index / (out_h * out_w);
+
+    for (size_t c = 0; c < channels; ++c)
+    {
+        for (size_t kh = 0; kh < kernel_size; ++kh)
+        {
+            for (size_t kw = 0; kw < kernel_size; ++kw)
+            {
+                int h_in = int(h_out * stride + kh) - int(padding);
+                int w_in = int(w_out * stride + kw) - int(padding);
+
+                float val = 0.0f;
+                if (h_in >= 0 && h_in < int(height) && w_in >= 0 && w_in < int(width))
+                {
+                    size_t input_idx = offset +
+                                       b * s_batch +
+                                       c * s_channel +
+                                       h_in * s_y +
+                                       w_in * s_x;
+                    val = input[input_idx];
+                }
+
+                size_t row = c * kernel_size * kernel_size + kh * kernel_size + kw;
+                size_t col_pos = b * (out_h * out_w) + h_out * out_w + w_out;
+                col[row * total_cols + col_pos] = val;
+            }
+        }
+    }
+}
+
+Tensor im2col_cuda(const Tensor &input, const std::vector<size_t> &shape, size_t kernel_size, size_t stride, size_t padding)
+{
+    if (shape.size() != 3)
+        throw std::runtime_error("La forma debe tener tamaño 3: {patch_dim, batch_size, num_patches}");
+
+    const auto &in_shape = input.getShape();
+    if (in_shape.size() != 4)
+        throw std::runtime_error("El tensor de entrada debe ser 4D");
+
+    const size_t batch_size = in_shape[0];
+    const size_t in_channels = in_shape[1];
+    const size_t in_h = in_shape[2];
+    const size_t in_w = in_shape[3];
+
+    const size_t out_h = (in_h + 2 * padding - kernel_size) / stride + 1;
+    const size_t out_w = (in_w + 2 * padding - kernel_size) / stride + 1;
+
+    const size_t patch_dim = shape[0];
+    const size_t batch_size_nominal = shape[1];
+    const size_t num_patches = shape[2];
+
+    if (batch_size_nominal != batch_size)
+        throw std::runtime_error("Batch size no coincide");
+
+    if (patch_dim != in_channels * kernel_size * kernel_size)
+        throw std::runtime_error("Dim patch incorrecto");
+
+    if (num_patches != out_h * out_w)
+        throw std::runtime_error("num_patches no coincide con out_h * out_w");
+
+    Tensor col_matrix({patch_dim, batch_size * num_patches});
+
+    const auto &in_strides = input.getStrides();
+    const size_t offset = input.getDataOffset();
+    const size_t ndim = in_shape.size();
+    const size_t input_size = input.getSize();
+    const size_t total_input_elements = input.getDataPtr()->size();
+    const size_t col_size = col_matrix.getSize();
+
+    float *d_input_raw = nullptr;
+    float *d_input_contig = nullptr;
+    float *d_col = nullptr;
+
+    CUDA_CHECK(cudaMalloc(&d_input_raw, sizeof(float) * total_input_elements));
+    CUDA_CHECK(cudaMemcpy(d_input_raw, input.getDataPtr()->data(),
+                          sizeof(float) * total_input_elements, cudaMemcpyHostToDevice));
+
+    if (input.isContiguous() && offset == 0)
+    {
+        d_input_contig = d_input_raw;
+    }
+    else
+    {
+        CUDA_CHECK(cudaMalloc(&d_input_contig, sizeof(float) * input_size));
+        const size_t threads = 256;
+        const size_t blocks = (input_size + threads - 1) / threads;
+
+        switch (ndim)
+        {
+        case 1:
+            copy1D<<<blocks, threads>>>(d_input_raw, d_input_contig, in_strides[0], offset, in_shape[0]);
+            break;
+        case 2:
+            copy2D<<<blocks, threads>>>(d_input_raw, d_input_contig, in_strides[0], in_strides[1], offset, in_shape[0], in_shape[1]);
+            break;
+        case 3:
+            copy3D<<<blocks, threads>>>(d_input_raw, d_input_contig, in_strides[0], in_strides[1], in_strides[2], offset, in_shape[0], in_shape[1], in_shape[2]);
+            break;
+        case 4:
+            copy4D<<<blocks, threads>>>(d_input_raw, d_input_contig, in_strides[0], in_strides[1], in_strides[2], in_strides[3], offset, in_shape[0], in_shape[1], in_shape[2], in_shape[3]);
+            break;
+        default:
+            CUDA_CHECK(cudaFree(d_input_raw));
+            throw std::runtime_error("Contiguous no soportado para ndim > 4.");
+        }
+
+        CUDA_CHECK(cudaGetLastError());
+    }
+
+    CUDA_CHECK(cudaMalloc(&d_col, sizeof(float) * col_size));
+
+    const int threads = 256;
+    const int blocks = (batch_size * out_h * out_w + threads - 1) / threads;
+
+    im2col_kernel_strided<<<blocks, threads>>>(
+        d_input_contig,
+        d_col,
+        0, // offset ya aplicado
+        in_channels * in_h * in_w,
+        in_h * in_w,
+        in_w,
+        1, // contiguo
+        batch_size, in_channels, in_h, in_w,
+        kernel_size, stride, padding,
+        out_h, out_w);
+    CUDA_CHECK(cudaGetLastError());
+
+    CUDA_CHECK(cudaMemcpy(col_matrix.getData(), d_col, sizeof(float) * col_size, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_input_raw));
+    if (d_input_contig != d_input_raw)
+        CUDA_CHECK(cudaFree(d_input_contig));
+    CUDA_CHECK(cudaFree(d_col));
+
+    return col_matrix;
+}
+
+__global__ void col2im_kernel(
+    const float *__restrict__ d_col,
+    float *__restrict__ d_output,
+    size_t batch_size,
+    size_t in_channels,
+    size_t in_h,
+    size_t in_w,
+    size_t kernel_size,
+    size_t stride,
+    size_t padding,
+    size_t out_h,
+    size_t out_w,
+    size_t col_stride_0, // row-major stride de col_matrix
+    size_t col_stride_1,
+    size_t out_stride_0, // strides de output_image
+    size_t out_stride_1,
+    size_t out_stride_2,
+    size_t out_stride_3)
+{
+    size_t col_c = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t total_cols = batch_size * out_h * out_w;
+    if (col_c >= total_cols)
+        return;
+
+    size_t w_out = col_c % out_w;
+    size_t h_out = (col_c / out_w) % out_h;
+    size_t b_idx = col_c / (out_h * out_w);
+
+    size_t row_idx = 0;
+    for (size_t c_in = 0; c_in < in_channels; ++c_in)
+    {
+        for (size_t kh = 0; kh < kernel_size; ++kh)
+        {
+            for (size_t kw = 0; kw < kernel_size; ++kw)
+            {
+                int h_in = static_cast<int>(h_out * stride + kh) - static_cast<int>(padding);
+                int w_in = static_cast<int>(w_out * stride + kw) - static_cast<int>(padding);
+
+                if (h_in >= 0 && h_in < static_cast<int>(in_h) &&
+                    w_in >= 0 && w_in < static_cast<int>(in_w))
+                {
+                    size_t out_index =
+                        b_idx * out_stride_0 +
+                        c_in * out_stride_1 +
+                        h_in * out_stride_2 +
+                        w_in * out_stride_3;
+
+                    size_t col_index = row_idx * col_stride_0 + col_c * col_stride_1;
+
+                    // Accumulación atómica
+                    atomicAdd(&d_output[out_index], d_col[col_index]);
+                }
+                row_idx++;
+            }
+        }
+    }
+}
+Tensor col2im_cuda(const Tensor &col_matrix,
+                   const std::vector<size_t> &in_shape,
+                   size_t kernel_size,
+                   size_t stride,
+                   size_t padding)
+{
+    if (in_shape.size() != 4)
+        throw std::runtime_error("in_shape debe ser de tamaño 4 (N, C, H, W)");
+
+    size_t batch_size = in_shape[0];
+    size_t in_channels = in_shape[1];
+    size_t in_h = in_shape[2];
+    size_t in_w = in_shape[3];
+
+    size_t out_h = (in_h + 2 * padding - kernel_size) / stride + 1;
+    size_t out_w = (in_w + 2 * padding - kernel_size) / stride + 1;
+    size_t total_cols = batch_size * out_h * out_w;
+
+    // Crear tensor de salida inicializado en 0
+    Tensor output_image(in_shape);
+    std::fill(output_image.getDataPtr()->begin(), output_image.getDataPtr()->end(), 0.0f);
+
+    // Reservar y copiar memoria a GPU
+    float *d_col = nullptr;
+    float *d_output = nullptr;
+
+    const float *h_col = col_matrix.getData();
+    const size_t col_size = col_matrix.getSize();
+    const size_t out_size = output_image.getSize();
+
+    CUDA_CHECK(cudaMalloc(&d_col, sizeof(float) * col_size));
+    CUDA_CHECK(cudaMemcpy(d_col, h_col, sizeof(float) * col_size, cudaMemcpyHostToDevice));
+
+    CUDA_CHECK(cudaMalloc(&d_output, sizeof(float) * out_size));
+    CUDA_CHECK(cudaMemset(d_output, 0, sizeof(float) * out_size)); // Cero inicializado
+
+    const auto &col_strides = col_matrix.getStrides();
+    const auto &out_strides = output_image.getStrides();
+
+    dim3 blockDim(256);
+    dim3 gridDim((total_cols + blockDim.x - 1) / blockDim.x);
+
+    col2im_kernel<<<gridDim, blockDim>>>(
+        d_col,
+        d_output,
+        batch_size,
+        in_channels,
+        in_h,
+        in_w,
+        kernel_size,
+        stride,
+        padding,
+        out_h,
+        out_w,
+        col_strides[0],
+        col_strides[1],
+        out_strides[0],
+        out_strides[1],
+        out_strides[2],
+        out_strides[3]);
+
+    CUDA_CHECK(cudaGetLastError());
+
+    // Copiar resultado a CPU
+    CUDA_CHECK(cudaMemcpy(output_image.getData(), d_output, sizeof(float) * out_size, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_col));
+    CUDA_CHECK(cudaFree(d_output));
+
+    return output_image;
 }

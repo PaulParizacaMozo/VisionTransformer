@@ -14,11 +14,10 @@
 // Como son utilidades internas, las dejamos aquí, pero necesitarán declararse en Conv2d.hpp
 // para que el compilador las conozca.
 // Por ahora, las dejaremos como funciones libres en este archivo para simplificar.
-namespace
-{
-    void im2col(const Tensor &input, Tensor &col_matrix, size_t kernel_size, size_t stride, size_t padding);
-    void col2im(const Tensor &col_matrix, Tensor &output_image, size_t kernel_size, size_t stride, size_t padding);
-}
+// namespace
+// {
+//     void col2im(const Tensor &col_matrix, Tensor &output_image, size_t kernel_size, size_t stride, size_t padding);
+// }
 
 Conv2d::Conv2d(size_t in_channels, size_t out_channels, size_t kernel_size, size_t stride, size_t padding)
     : in_channels(in_channels), out_channels(out_channels), kernel_size(kernel_size), stride(stride), padding(padding)
@@ -60,8 +59,8 @@ Tensor Conv2d::forward(const Tensor &input, bool isTraining)
     // 2. Transformar la entrada a una matriz de columnas (im2col)
     size_t patch_dim = this->in_channels * this->kernel_size * this->kernel_size;
     size_t num_patches = out_h * out_w;
-    Tensor im2col_matrix({patch_dim, batch_size * num_patches});
-    im2col(input, im2col_matrix, this->kernel_size, this->stride, this->padding);
+
+    Tensor im2col_matrix = im2col_cuda(input, {patch_dim, batch_size, num_patches}, this->kernel_size, this->stride, this->padding);
 
     // 3. Remodelar los pesos para la multiplicación (sin copia)
     // De {out_C, in_C, kH, kW} a {out_C, in_C * kH * kW}
@@ -129,8 +128,7 @@ Tensor Conv2d::backward(const Tensor &outputGradient)
     // }
     reshaped_out_grad = reshaped_out_grad.reshape({this->out_channels, batch_size * num_patches});
 
-    Tensor im2col_matrix({patch_dim, batch_size * num_patches});
-    im2col(this->inputTensor, im2col_matrix, this->kernel_size, this->stride, this->padding);
+    Tensor im2col_matrix = im2col_cuda(this->inputTensor, {patch_dim, batch_size, num_patches}, this->kernel_size, this->stride, this->padding);
 
     // --- 3. Calcular gradiente de los pesos (dE/dW) ---
     // dW = dY @ X_im2col^T
@@ -157,11 +155,18 @@ Tensor Conv2d::backward(const Tensor &outputGradient)
     //     std::cerr << "Error en la verificación de contiguous 2d\n";
     // }
     Tensor dX_col = matrixMultiply_cuda(weights_transposed, reshaped_out_grad);
+    return col2im_cuda(dX_col, in_shape, this->kernel_size, this->stride, this->padding);
 
-    Tensor input_gradient(in_shape);
-    col2im(dX_col, input_gradient, this->kernel_size, this->stride, this->padding);
+    // Tensor r_cuda = col2im_cuda(dX_col, in_shape, this->kernel_size, this->stride, this->padding);
 
-    return input_gradient;
+    // Tensor input_gradient(in_shape);
+    // col2im(dX_col, input_gradient, this->kernel_size, this->stride, this->padding);
+    // if (verify(input_gradient, r_cuda, 1e-5f) == false)
+    // {
+    //     std::cerr << "Error en la verificación de col2im\n";
+    // }
+
+    // return input_gradient;
 }
 
 // --- Getters ---
@@ -169,124 +174,135 @@ std::vector<Tensor *> Conv2d::getParameters() { return {&this->weights, &this->b
 std::vector<Tensor *> Conv2d::getGradients() { return {&this->weightGradients, &this->biasGradients}; }
 
 // --- Implementaciones de im2col y col2im (movidas a un namespace anónimo) ---
-namespace
-{
+// namespace
+// {
 
-    /**
-     * @brief Transforma parches de la imagen de entrada en columnas de una matriz.
-     * @details Cada columna de la matriz de salida representa un parche aplanado.
-     * @param input El tensor de entrada de forma {B, C_in, H_in, W_in}.
-     * @param col_matrix El tensor de salida que se llenará, de forma {C_in*kH*kW, B*H_out*W_out}.
-     * @param kernel_size El tamaño del kernel (k).
-     * @param stride El paso del kernel.
-     * @param padding El relleno de la imagen.
-     */
-    void im2col(const Tensor &input, Tensor &col_matrix, size_t kernel_size, size_t stride, size_t padding)
-    {
-        const auto &in_shape = input.getShape();
-        const size_t batch_size = in_shape[0];
-        const size_t in_channels = in_shape[1];
-        const size_t in_h = in_shape[2];
-        const size_t in_w = in_shape[3];
+//     // /**
+//     //  * @brief Transforma parches de la imagen de entrada en columnas de una matriz.
+//     //  * @details Cada columna de la matriz de salida representa un parche aplanado.
+//     //  * @param input El tensor de entrada de forma {B, C_in, H_in, W_in}.
+//     //  * @param col_matrix El tensor de salida que se llenará, de forma {C_in*kH*kW, B*H_out*W_out}.
+//     //  * @param kernel_size El tamaño del kernel (k).
+//     //  * @param stride El paso del kernel.
+//     //  * @param padding El relleno de la imagen.
+//     //  */
+//     // void im2col(const Tensor &input, Tensor &col_matrix, size_t kernel_size, size_t stride, size_t padding)
+//     // {
+//     //     const auto &in_shape = input.getShape();
+//     //     const size_t batch_size = in_shape[0];
+//     //     const size_t in_channels = in_shape[1];
+//     //     const size_t in_h = in_shape[2];
+//     //     const size_t in_w = in_shape[3];
 
-        const size_t out_h = (in_h + 2 * padding - kernel_size) / stride + 1;
-        const size_t out_w = (in_w + 2 * padding - kernel_size) / stride + 1;
+//     //     const size_t out_h = (in_h + 2 * padding - kernel_size) / stride + 1;
+//     //     const size_t out_w = (in_w + 2 * padding - kernel_size) / stride + 1;
 
-        const size_t col_rows = col_matrix.getShape()[0];
-        const size_t col_cols = col_matrix.getShape()[1];
+//     //     const size_t col_rows = col_matrix.getShape()[0];
+//     //     const size_t col_cols = col_matrix.getShape()[1];
 
-        if (col_rows != in_channels * kernel_size * kernel_size || col_cols != batch_size * out_h * out_w)
-        {
-            throw std::runtime_error("Dimensiones de la matriz im2col incorrectas.");
-        }
+//     //     const size_t patch_dim = in_channels * kernel_size * kernel_size;
+//     //     const size_t num_patches = out_h * out_w;
 
-#pragma omp parallel for
-        for (size_t col_c = 0; col_c < col_cols; ++col_c)
-        {
-            // Calcular a qué parche (b, oh, ow) corresponde esta columna
-            size_t w_out = col_c % out_w;
-            size_t h_out = (col_c / out_w) % out_h;
-            size_t b_idx = col_c / (out_h * out_w);
+//     //     if (col_rows != patch_dim || col_cols != batch_size * num_patches)
+//     //     {
+//     //         throw std::runtime_error("Dimensiones de la matriz im2col incorrectas.");
+//     //     }
+//     //     col_matrix = im2col_cuda2(input, {patch_dim, batch_size, num_patches}, kernel_size, stride, padding);
 
-            size_t row_idx = 0;
-            // Rellenar la columna iterando sobre el parche correspondiente
-            for (size_t c_in = 0; c_in < in_channels; ++c_in)
-            {
-                for (size_t kh = 0; kh < kernel_size; ++kh)
-                {
-                    for (size_t kw = 0; kw < kernel_size; ++kw)
-                    {
-                        int h_in = static_cast<int>(h_out * stride + kh) - static_cast<int>(padding);
-                        int w_in = static_cast<int>(w_out * stride + kw) - static_cast<int>(padding);
+//     //     // #pragma omp parallel for
+//     //     //         for (size_t col_c = 0; col_c < col_cols; ++col_c)
+//     //     //         {
+//     //     //             // Calcular a qué parche (b, oh, ow) corresponde esta columna
+//     //     //             size_t w_out = col_c % out_w;
+//     //     //             size_t h_out = (col_c / out_w) % out_h;
+//     //     //             size_t b_idx = col_c / (out_h * out_w);
 
-                        float val = 0.0f;
-                        // Si el píxel está dentro de los límites (después de considerar el padding), lo tomamos.
-                        if (h_in >= 0 && h_in < static_cast<int>(in_h) && w_in >= 0 && w_in < static_cast<int>(in_w))
-                        {
-                            val = input(b_idx, c_in, h_in, w_in);
-                        }
-                        col_matrix(row_idx, col_c) = val;
-                        row_idx++;
-                    }
-                }
-            }
-        }
-    }
+//     //     //             size_t row_idx = 0;
+//     //     //             // Rellenar la columna iterando sobre el parche correspondiente
+//     //     //             for (size_t c_in = 0; c_in < in_channels; ++c_in)
+//     //     //             {
+//     //     //                 for (size_t kh = 0; kh < kernel_size; ++kh)
+//     //     //                 {
+//     //     //                     for (size_t kw = 0; kw < kernel_size; ++kw)
+//     //     //                     {
+//     //     //                         int h_in = static_cast<int>(h_out * stride + kh) - static_cast<int>(padding);
+//     //     //                         int w_in = static_cast<int>(w_out * stride + kw) - static_cast<int>(padding);
 
-    /**
-     * @brief Operación inversa a im2col. Transforma una matriz de columnas en una "imagen".
-     * @details Acumula (suma) los valores de las columnas en las posiciones correctas de la imagen de salida.
-     *          Esencial para calcular el gradiente de entrada (dE/dX).
-     * @param col_matrix La matriz de columnas de entrada, forma {C_in*kH*kW, B*H_out*W_out}.
-     * @param output_image El tensor de imagen de salida que se llenará, forma {B, C_in, H_in, W_in}.
-     * @param kernel_size El tamaño del kernel (k).
-     * @param stride El paso del kernel.
-     * @param padding El relleno de la imagen.
-     */
-    void col2im(const Tensor &col_matrix, Tensor &output_image, size_t kernel_size, size_t stride, size_t padding)
-    {
-        const auto &out_shape = output_image.getShape();
-        const size_t batch_size = out_shape[0];
-        const size_t in_channels = out_shape[1];
-        const size_t in_h = out_shape[2];
-        const size_t in_w = out_shape[3];
+//     //     //                         float val = 0.0f;
+//     //     //                         // Si el píxel está dentro de los límites (después de considerar el padding), lo tomamos.
+//     //     //                         if (h_in >= 0 && h_in < static_cast<int>(in_h) && w_in >= 0 && w_in < static_cast<int>(in_w))
+//     //     //                         {
+//     //     //                             val = input(b_idx, c_in, h_in, w_in);
+//     //     //                         }
+//     //     //                         col_matrix(row_idx, col_c) = val;
+//     //     //                         row_idx++;
+//     //     //                     }
+//     //     //                 }
+//     //     //             }
+//     //     //         }
 
-        const size_t out_h = (in_h + 2 * padding - kernel_size) / stride + 1;
-        const size_t out_w = (in_w + 2 * padding - kernel_size) / stride + 1;
+//     //     //         if (verify(col_matrix, col_matrix_cuda, 1e-5f) == false)
+//     //     //         {
+//     //     //             std::cerr << "Error en la verificación de im2col\n";
+//     //     //             col_matrix.printDebugInfo("Col Matrix CPU");
+//     //     //             col_matrix_cuda.printDebugInfo("Col Matrix CUDA");
+//     //     //         }
+//     // }
 
-        output_image.fill(0.0f); // Es crucial empezar con ceros porque vamos a acumular gradientes.
+//     /**
+//      * @brief Operación inversa a im2col. Transforma una matriz de columnas en una "imagen".
+//      * @details Acumula (suma) los valores de las columnas en las posiciones correctas de la imagen de salida.
+//      *          Esencial para calcular el gradiente de entrada (dE/dX).
+//      * @param col_matrix La matriz de columnas de entrada, forma {C_in*kH*kW, B*H_out*W_out}.
+//      * @param output_image El tensor de imagen de salida que se llenará, forma {B, C_in, H_in, W_in}.
+//      * @param kernel_size El tamaño del kernel (k).
+//      * @param stride El paso del kernel.
+//      * @param padding El relleno de la imagen.
+//      */
+//     void col2im(const Tensor &col_matrix, Tensor &output_image, size_t kernel_size, size_t stride, size_t padding)
+//     {
+//         const auto &out_shape = output_image.getShape();
+//         const size_t batch_size = out_shape[0];
+//         const size_t in_channels = out_shape[1];
+//         const size_t in_h = out_shape[2];
+//         const size_t in_w = out_shape[3];
 
-#pragma omp parallel for
-        for (size_t col_c = 0; col_c < col_matrix.getShape()[1]; ++col_c)
-        {
-            size_t w_out = col_c % out_w;
-            size_t h_out = (col_c / out_w) % out_h;
-            size_t b_idx = col_c / (out_h * out_w);
+//         const size_t out_h = (in_h + 2 * padding - kernel_size) / stride + 1;
+//         const size_t out_w = (in_w + 2 * padding - kernel_size) / stride + 1;
 
-            size_t row_idx = 0;
-            for (size_t c_in = 0; c_in < in_channels; ++c_in)
-            {
-                for (size_t kh = 0; kh < kernel_size; ++kh)
-                {
-                    for (size_t kw = 0; kw < kernel_size; ++kw)
-                    {
-                        int h_in = static_cast<int>(h_out * stride + kh) - static_cast<int>(padding);
-                        int w_in = static_cast<int>(w_out * stride + kw) - static_cast<int>(padding);
+//         output_image.fill(0.0f); // Es crucial empezar con ceros porque vamos a acumular gradientes.
 
-                        if (h_in >= 0 && h_in < static_cast<int>(in_h) && w_in >= 0 && w_in < static_cast<int>(in_w))
-                        {
-// Un píxel de la imagen de entrada puede ser parte de varios parches,
-// por lo que sus gradientes deben sumarse (acumularse).
-// #pragma omp atomic es necesario para evitar condiciones de carrera
-// cuando múltiples hilos intentan escribir en el mismo píxel de output_image.
-#pragma omp atomic
-                            output_image(b_idx, c_in, h_in, w_in) += col_matrix(row_idx, col_c);
-                        }
-                        row_idx++;
-                    }
-                }
-            }
-        }
-    }
+// #pragma omp parallel for
+//         for (size_t col_c = 0; col_c < col_matrix.getShape()[1]; ++col_c)
+//         {
+//             size_t w_out = col_c % out_w;
+//             size_t h_out = (col_c / out_w) % out_h;
+//             size_t b_idx = col_c / (out_h * out_w);
 
-} // namespace
+//             size_t row_idx = 0;
+//             for (size_t c_in = 0; c_in < in_channels; ++c_in)
+//             {
+//                 for (size_t kh = 0; kh < kernel_size; ++kh)
+//                 {
+//                     for (size_t kw = 0; kw < kernel_size; ++kw)
+//                     {
+//                         int h_in = static_cast<int>(h_out * stride + kh) - static_cast<int>(padding);
+//                         int w_in = static_cast<int>(w_out * stride + kw) - static_cast<int>(padding);
+
+//                         if (h_in >= 0 && h_in < static_cast<int>(in_h) && w_in >= 0 && w_in < static_cast<int>(in_w))
+//                         {
+// // Un píxel de la imagen de entrada puede ser parte de varios parches,
+// // por lo que sus gradientes deben sumarse (acumularse).
+// // #pragma omp atomic es necesario para evitar condiciones de carrera
+// // cuando múltiples hilos intentan escribir en el mismo píxel de output_image.
+// #pragma omp atomic
+//                             output_image(b_idx, c_in, h_in, w_in) += col_matrix(row_idx, col_c);
+//                         }
+//                         row_idx++;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+// } // namespace
