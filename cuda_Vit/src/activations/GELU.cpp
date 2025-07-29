@@ -16,7 +16,7 @@ Tensor GELU::forward(const Tensor &input, bool isTraining) {
   }
 
   Tensor result(input.getShape());
-  const auto &shape = input.getShape();
+  // const auto &shape = input.getShape();
 
   // Implementación genérica que funciona para cualquier tensor contiguo.
   // Usar getData() es más rápido si sabemos que el tensor es contiguo.

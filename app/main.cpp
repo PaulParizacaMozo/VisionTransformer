@@ -9,9 +9,9 @@ int main() {
   try {
     // --- 1. Definir Configuraciones ---
     ViTConfig model_config;
-    model_config.embedding_dim = 64; // 128 - 196 
-    model_config.num_layers = 2; // 6 
-    model_config.num_heads = 4;
+    model_config.embedding_dim = 96; // 128 - 196 
+    model_config.num_layers = 8; // 6 
+    model_config.num_heads = 8;
     model_config.patch_size = 14;
     model_config.num_classes = 10;
     model_config.in_channels = 1;

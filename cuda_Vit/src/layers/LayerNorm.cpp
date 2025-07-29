@@ -159,8 +159,9 @@ Tensor LayerNorm::backward(const Tensor &outputGradient)
   {
     float inv_stddev = this->variance(i, 0); // Reutilizamos el valor guardado
 
-    float dL_dgamma_sum = 0; // Acumuladores para derivadas intermedias
-    float dL_dbeta_sum = 0;
+    // Acumuladores para derivadas intermedias
+    // float dL_dgamma_sum = 0; 
+    // float dL_dbeta_sum = 0;
 
     float dL_dXhat_dot_Xhat_sum = 0;
     float dL_dXhat_sum = 0;
