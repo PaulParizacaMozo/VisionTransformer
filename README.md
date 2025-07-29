@@ -350,6 +350,27 @@ Cada bloque contiene:
   - Accuracy máximo alcanzado: **80% en validación**.
   ![BloodMNIST Plot](.docs/training_plots_ViT_Blood_MNIST_28x28.png)
 
+## Features Implementadas
+
+- **Vision Transformer (ViT)** desde cero en C++
+- **Patch Embedding** con proyección lineal de imágenes (tambien con versión **Conv2D**)
+- **Multi-Head Self-Attention** con soporte para múltiples cabezas
+- **Positional Encoding** aprendido
+- **Residual Connections** y **Layer Normalization**
+- **Feedforward Network (MLP)** posatención
+- **Dropout** en múltiples capas para regularización
+- **Data Augmentation** (rotación, traslacion, zoom) para evitar overfitting
+- **Weight Decay (L2 Regularization)** para evitar overfitting
+- **Adam Optimizer** con soporte para momentum adaptativo
+- **Scheduler** para actualización del learning rate 
+- **Softmax y Cross-Entropy Loss**
+- **Entrenamiento en GPU con CUDA**
+- **Visualización del entrenamiento (accuracy y loss por época)**
+- **Metricas de Accuracy, Precision, Recall, F1-score y Matriz de confusion**
+- **Evaluación con conjuntos de validación y test**
+- **Clasificación por lotes (batching)**
+
+
 ## Estructura del Proyecto
 
 A continuación se muestra la estructura de directorios del proyecto:
