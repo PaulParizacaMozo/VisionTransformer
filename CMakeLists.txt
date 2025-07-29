@@ -1,16 +1,12 @@
-cmake_minimum_required(VERSION 3.18)
-
+cmake_minimum_required(VERSION 3.10)
 
 # --- Información del Proyecto ---
-project(ViT LANGUAGES CXX CUDA)
+project(ViT CXX)
 
 # --- Estándar del Lenguaje ---
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-# Establecemos host de CUDA
-set(CMAKE_CUDA_STANDARD 17)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 # --- Configuración de Tipos de Compilación y Flags ---
 if(NOT CMAKE_BUILD_TYPE)
@@ -32,53 +28,43 @@ message(STATUS "Compiler flags: ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUI
 
 # --- Búsqueda de Dependencias ---
 find_package(OpenMP REQUIRED)
-find_package(CUDAToolkit REQUIRED)
 
 # --- Configuración de Directorios ---
 include_directories(include)
 
 # --- Recopilación de Archivos Fuente ---
-file(GLOB_RECURSE CPP_SOURCES
+file(GLOB_RECURSE SOURCES
     "src/*.cpp"
 )
-file(GLOB_RECURSE CUDA_SOURCES "src/utils/CudaUtils.cu")
 
 set(MAIN_SOURCE "app/main.cpp")
 set(TEST_SOURCE "app/test.cpp")
 set(TEST_IMAGE_SOURCE "app/testImage.cpp")
 set(TEST_LABEL_SOURCE "app/testLabel.cpp")
+set(TL_SOURCE "app/tl.cpp")
 
 # --- Creación del Ejecutable ---
-add_executable(${PROJECT_NAME} ${MAIN_SOURCE} ${CPP_SOURCES} ${CUDA_SOURCES})
+add_executable(${PROJECT_NAME} ${MAIN_SOURCE} ${SOURCES})
 
 # --- Creación del Ejecutable para el Test ---
-add_executable(test ${TEST_SOURCE} ${CPP_SOURCES} ${CUDA_SOURCES})
+add_executable(test ${TEST_SOURCE} ${SOURCES}) 
 
 # --- Creación del Ejecutable para el TestImage ---
-add_executable(testImage ${TEST_IMAGE_SOURCE} ${CPP_SOURCES} ${CUDA_SOURCES})
+add_executable(testImage ${TEST_IMAGE_SOURCE} ${SOURCES})
 
 # --- Creación del Ejecutable para el TestLabel ---
-add_executable(testLabel ${TEST_LABEL_SOURCE} ${CPP_SOURCES} ${CUDA_SOURCES})
+add_executable(testLabel ${TEST_LABEL_SOURCE} ${SOURCES})
 
+# --- Creación del Ejecutable para el TL ---
+add_executable(tl ${TL_SOURCE} ${SOURCES}) 
 
 # --- Enlace de Librerías ---
-message(STATUS "Enlazando librerías...")
-
-# Definimos una función para no repetir el código de enlace
-function(link_project_libraries target_name)
-    # Enlazar OpenMP (para el código de CPU)
-    target_link_libraries(${target_name} PRIVATE OpenMP::OpenMP_CXX)
-    
-    # Enlazar librerías de CUDA
-    # CUDA::cublas para la multiplicación de matrices en GPU
-    # CUDA::cudart para el runtime de CUDA (cudaMalloc, cudaMemcpy, etc.)
-    target_link_libraries(${target_name} PRIVATE CUDA::cublas CUDA::cudart)
-endfunction()
-
-# Llamamos a la función para cada uno de nuestros ejecutables
-link_project_libraries(${PROJECT_NAME})
-link_project_libraries(test)
-link_project_libraries(testImage)
-link_project_libraries(testLabel)
+if(OpenMP_FOUND)
+    message(STATUS "OpenMP encontrado, enlazando...")
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(test PRIVATE OpenMP::OpenMP_CXX)  
+else()
+    message(WARNING "OpenMP no se encontró. La compilación continuará sin paralelización.")
+endif()
 
 message(STATUS "Configuración de CMake para ${PROJECT_NAME} completada.")

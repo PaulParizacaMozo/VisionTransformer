@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <random>
 #include <cmath>
-#include <chrono>
+
 // --- Función Auxiliar (privada a este archivo usando un namespace anónimo) ---
 namespace
 {
@@ -53,15 +53,13 @@ namespace
 /**
  * @brief Constructor del Trainer. Recibe una referencia al modelo y la configuración.
  */
-/**
- * @brief Constructor del Trainer. Recibe una referencia al modelo y la configuración.
- */
-Trainer::Trainer(VisionTransformer &model, const TrainerConfig &train_config)
+Trainer::Trainer(VisionTransformer &model, const TrainerConfig &train_config, const std::vector<float> &class_weights)
     : model(model), // <-- Guarda la referencia
       optimizer(train_config.learning_rate, 0.9f, 0.999f, 1e-8f, train_config.weight_decay),
       loss_fn(),
       config(train_config), logger("vit_results.csv")
 {
+  loss_fn.setClassWeights(class_weights);
 }
 
 /**
@@ -78,9 +76,9 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
 
   for (int epoch = 0; epoch < config.epochs; ++epoch)
   {
-    auto start = std::chrono::high_resolution_clock::now();
     // std::cout << "\n--- Época " << epoch + 1 << "/" << config.epochs << " --- | ";
 
+    auto start = std::chrono::high_resolution_clock::now();
     // Ejecutar una época de entrenamiento y obtener sus métricas
     // auto [train_loss, train_acc] = train_epoch(X_train, y_train);
     auto [train_loss, train_acc] = train_epoch(X_train, y_train, epoch);
@@ -92,7 +90,6 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data, const std::pair
     auto [test_loss, test_acc] = evaluate(X_test, y_test);
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = end - start;
-
     // Registrar en el logger
     logger.log_epoch(epoch, config.epochs, train_loss, train_acc, test_loss, test_acc);
 
@@ -214,6 +211,7 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
     float batch_loss = loss_fn.calculate(logits, y_batch);
 
     total_loss += batch_loss;
+    // total_loss += loss_fn.calculate(logits, y_batch);
     total_accuracy += calculate_accuracy(logits, y_batch);
 
     Tensor grad = loss_fn.backward(logits, y_batch);

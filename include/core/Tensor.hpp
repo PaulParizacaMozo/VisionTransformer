@@ -20,8 +20,7 @@ Tensor expand(const Tensor &tensor, size_t dim, size_t size);
  * para permitir vistas eficientes (sin copia de datos) mediante el uso de
  * "strides" y un "offset".
  */
-class Tensor
-{
+class Tensor {
 public:
   // --- Constructores y Destructor ---
   Tensor();
@@ -52,8 +51,8 @@ public:
   void addBroadcast(const Tensor &other);
   Tensor contiguous() const; // AÑADIDO
 
-  Tensor expand(const std::vector<size_t> &newShape) const;
-  void copyFrom(const Tensor &src);
+  Tensor expand(const std::vector<size_t>& newShape) const;
+  void copyFrom(const Tensor& src);
 
   // --- Operadores Aritméticos ---
   Tensor operator+(const Tensor &other) const;
@@ -74,7 +73,7 @@ public:
   std::string shapeToString() const;
   bool isContiguous() const;
   // --- Operaciones y Vistas ---
-  Tensor clone() const; // Añade esta línea junto a los otros métodos como slice(), reshape(), etc.
+  Tensor clone() const;  // Añade esta línea junto a los otros métodos como slice(), reshape(), etc.
 
   // depuracion
   void printDebugInfo(const std::string &name) const; // NUEVA
@@ -97,11 +96,10 @@ Tensor matrixMultiply(const Tensor &a, const Tensor &b);
 
 /** @brief Realiza la multiplicación de matrices por lotes (BMM) en tensores 3D. */
 Tensor batchMatrixMultiply(const Tensor &a, const Tensor &b);
-bool verify(const Tensor &a, const Tensor &b, float atol = 1e-5);
+
 // --- Implementaciones Inline (para rendimiento) ---
 
-inline float &Tensor::operator()(size_t i)
-{
+inline float &Tensor::operator()(size_t i) {
 #ifndef NDEBUG
   if (shape.size() != 1 || i >= shape[0])
     throw std::out_of_range("Acceso 1D fuera de rango.");
@@ -109,8 +107,7 @@ inline float &Tensor::operator()(size_t i)
   return (*dataPtr)[dataOffset + i * strides[0]];
 }
 
-inline const float &Tensor::operator()(size_t i) const
-{
+inline const float &Tensor::operator()(size_t i) const {
 #ifndef NDEBUG
   if (shape.size() != 1 || i >= shape[0])
     throw std::out_of_range("Acceso 1D fuera de rango.");
@@ -118,8 +115,7 @@ inline const float &Tensor::operator()(size_t i) const
   return (*dataPtr)[dataOffset + i * strides[0]];
 }
 
-inline float &Tensor::operator()(size_t i, size_t j)
-{
+inline float &Tensor::operator()(size_t i, size_t j) {
 #ifndef NDEBUG
   if (shape.size() != 2 || i >= shape[0] || j >= shape[1])
     throw std::out_of_range("Acceso 2D fuera de rango.");
@@ -127,8 +123,7 @@ inline float &Tensor::operator()(size_t i, size_t j)
   return (*dataPtr)[dataOffset + i * strides[0] + j * strides[1]];
 }
 
-inline const float &Tensor::operator()(size_t i, size_t j) const
-{
+inline const float &Tensor::operator()(size_t i, size_t j) const {
 #ifndef NDEBUG
   if (shape.size() != 2 || i >= shape[0] || j >= shape[1])
     throw std::out_of_range("Acceso 2D fuera de rango.");
@@ -136,8 +131,7 @@ inline const float &Tensor::operator()(size_t i, size_t j) const
   return (*dataPtr)[dataOffset + i * strides[0] + j * strides[1]];
 }
 
-inline float &Tensor::operator()(size_t i, size_t j, size_t k)
-{
+inline float &Tensor::operator()(size_t i, size_t j, size_t k) {
 #ifndef NDEBUG
   if (shape.size() != 3 || i >= shape[0] || j >= shape[1] || k >= shape[2])
     throw std::out_of_range("Acceso 3D fuera de rango.");
@@ -145,8 +139,7 @@ inline float &Tensor::operator()(size_t i, size_t j, size_t k)
   return (*dataPtr)[dataOffset + i * strides[0] + j * strides[1] + k * strides[2]];
 }
 
-inline const float &Tensor::operator()(size_t i, size_t j, size_t k) const
-{
+inline const float &Tensor::operator()(size_t i, size_t j, size_t k) const {
 #ifndef NDEBUG
   if (shape.size() != 3 || i >= shape[0] || j >= shape[1] || k >= shape[2])
     throw std::out_of_range("Acceso 3D fuera de rango.");
@@ -155,16 +148,14 @@ inline const float &Tensor::operator()(size_t i, size_t j, size_t k) const
 }
 
 // --- RE-INTRODUCIDO: Acceso 4D ---
-inline float &Tensor::operator()(size_t d0, size_t d1, size_t d2, size_t d3)
-{
+inline float &Tensor::operator()(size_t d0, size_t d1, size_t d2, size_t d3) {
 #ifndef NDEBUG
   if (shape.size() != 4 || d0 >= shape[0] || d1 >= shape[1] || d2 >= shape[2] || d3 >= shape[3])
     throw std::out_of_range("Acceso 4D fuera de rango.");
 #endif
   return (*dataPtr)[dataOffset + d0 * strides[0] + d1 * strides[1] + d2 * strides[2] + d3 * strides[3]];
 }
-inline const float &Tensor::operator()(size_t d0, size_t d1, size_t d2, size_t d3) const
-{
+inline const float &Tensor::operator()(size_t d0, size_t d1, size_t d2, size_t d3) const {
 #ifndef NDEBUG
   if (shape.size() != 4 || d0 >= shape[0] || d1 >= shape[1] || d2 >= shape[2] || d3 >= shape[3])
     throw std::out_of_range("Acceso 4D fuera de rango.");
