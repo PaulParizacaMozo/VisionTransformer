@@ -1,76 +1,75 @@
 # Vision Transformer
 
-## Estructura del Proyecto
+![nVIDIA](https://img.shields.io/badge/cuda-green.svg?style=for-the-badge&logo=nVIDIA&logoColor=white)
+![C++](https://img.shields.io/badge/c++-%2300599C.svg?style=for-the-badge&logo=c%2B%2B&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-%23008FBA.svg?style=for-the-badge&logo=cmake&logoColor=white)
 
-A continuación se muestra la estructura de directorios del proyecto:
+> **💡 Puedes ejecutar el entrenamiento en GPU con CUDA desde [Google Colab](https://colab.research.google.com/drive/1n7AIsbDGGtv3eTVO681Enz35pO3e5fWF?usp=sharing):**  
+> [![Abrir en Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1n7AIsbDGGtv3eTVO681Enz35pO3e5fWF?usp=sharing)
 
+---
+
+## Instrucciones para ejecutar el proyecto con GPU (CUDA)
+
+### **_Requisitos:_**
+
+| **Herramienta** | **Usado**       | **Recomendado** |
+| --------------- | --------------- | --------------- |
+| **CMake**       | 3.30.5          | ≥ 3.26          |
+| **G++ (GCC)**   | 13.3.1          | < 13.x          |
+| **CUDA (nvcc)** | 12.6 (V12.6.85) | 12.0 o superior |
+
+
+### 1. Clonar repositorio, Descargar y descomprimir los datos
+
+```bash
+git clone https://github.com/PaulParizacaMozo/VisionTransformer.git
+cd VisionTransformer
+cd cuda_Vit
 ```
-.
-├── app
-│   └── main.cpp
-├── CMakeLists.txt
-├── compile\_commands.json
-├── data
-│   ├── fashion\_test.csv
-│   ├── fashion\_train.csv
-│   ├── mnist\_test.csv
-│   └── mnist\_train.csv
-├── include
-│   ├── activations
-│   │   ├── GELU.hpp
-│   │   └── ReLU.hpp
-│   ├── core
-│   │   └── Tensor.hpp
-│   ├── layers
-│   │   ├── Dense.hpp
-│   │   ├── Embeddings.hpp
-│   │   ├── FeedForward.hpp
-│   │   ├── Layer.hpp
-│   │   ├── LayerNorm.hpp
-│   │   ├── MultiHeadAttention.hpp
-│   │   └── PatchEmbedding.hpp
-│   ├── losses
-│   │   ├── CrossEntropy.hpp
-│   │   └── Loss.hpp
-│   ├── model
-│   │   ├── Trainer.hpp
-│   │   ├── TransformerEncoderBlock.hpp
-│   │   └── VisionTransformer.hpp
-│   ├── optimizers
-│   │   ├── Adam.hpp
-│   │   ├── Optimizer.hpp
-│   │   └── SGD.hpp
-│   └── utils
-│   │   ├── DataReader.hpp
-│   │   └── ModelUtils.hpp
-├── README.md
-├── run.sh
-└── src
-├── activations
-│   ├── GELU.cpp
-│   └── ReLU.cpp
-├── core
-│   └── Tensor.cpp
-├── layers
-│   ├── Dense.cpp
-│   ├── Embeddings.cpp
-│   ├── FeedForward.cpp
-│   ├── LayerNorm.cpp
-│   ├── MultiHeadAttention.cpp
-│   └── PatchEmbedding.cpp
-├── losses
-│   └── CrossEntropy.cpp
-├── model
-│   ├── Trainer.cpp
-│   ├── TransformerEncoderBlock.cpp
-│   └── VisionTransformer.cpp
-├── optimizers
-│   └── Adam.cpp
-└── utils
-├── DataReader.cpp
-└── ModelUtils.cpp
 
+El proyecto utiliza un archivo comprimido llamado `data.zip` que contiene los conjuntos de datos necesarios para la ejecución (Fashion MNIST y MNIST).
+
+1. Descarga el archivo `data.zip` desde el repositorio.
+2. Descomprime el archivo `data.zip` en el directorio raíz de tu proyecto. Esto creará un directorio `data` que contiene los siguientes archivos CSV:
+   - `fashion_test.csv`
+   - `fashion_train.csv`
+   - `mnist_test.csv`
+   - `mnist_train.csv`
+
+```bash
+wget https://github.com/PaulParizacaMozo/VisionTransformer/releases/download/data/data.zip
+7z x data.zip
 ```
+
+### 2. Preparar el script `run.sh`
+
+Antes de ejecutar el script, asegúrate de darle permisos de ejecución:
+
+```bash
+chmod +x run.sh
+```
+
+### 3. Ejecutar el proyecto
+
+- Para ejecutar el entrenamiento:
+
+```bash
+./run.sh
+```
+
+- Para testear el modelo en el conjunto de pruebas:
+
+```bash
+./run.sh test
+```
+
+- Para testear el modelo con una imagen aleatoria `.png`:
+
+```bash
+./run.sh image data/7.png
+```
+
 
 ## Instrucciones para ejecutar el proyecto con CPU
 
@@ -133,75 +132,13 @@ Este script compilará y ejecutará el proyecto. Los datos de entrada se leerán
 
 ---
 
-## Vision Transformer in CUDA
+## Resultados
 
-### Requisitos
-
-| **Herramienta** | **Usado**       | **Recomendado** |
-| --------------- | --------------- | --------------- |
-| **CMake**       | 3.30.5          | ≥ 3.26          |
-| **G++ (GCC)**   | 13.3.1          | 13.x            |
-| **CUDA (nvcc)** | 12.6 (V12.6.85) | 12.0 o superior |
-
-### Instrucciones para ejecutar el proyecto
-
-#### 1. Clonar repositorio, Descargar y descomprimir los datos
-
-```bash
-git clone https://github.com/PaulParizacaMozo/VisionTransformer.git
-cd VisionTransformer
-cd cuda_Vit
-```
-
-El proyecto utiliza un archivo comprimido llamado `data.zip` que contiene los conjuntos de datos necesarios para la ejecución (Fashion MNIST y MNIST).
-
-1. Descarga el archivo `data.zip` desde el repositorio.
-2. Descomprime el archivo `data.zip` en el directorio raíz de tu proyecto. Esto creará un directorio `data` que contiene los siguientes archivos CSV:
-   - `fashion_test.csv`
-   - `fashion_train.csv`
-   - `mnist_test.csv`
-   - `mnist_train.csv`
-
-```bash
-wget https://github.com/PaulParizacaMozo/VisionTransformer/releases/download/data/data.zip
-7z x data.zip
-```
-
-#### 2. Preparar el script `run.sh`
-
-Antes de ejecutar el script, asegúrate de darle permisos de ejecución:
-
-```bash
-chmod +x run.sh
-```
-
-#### 3. Ejecutar el proyecto
-
-- Para ejecutar el entrenamiento:
-
-```bash
-./run.sh
-```
-
-- Para testear el modelo en el conjunto de pruebas:
-
-```bash
-./run.sh test
-```
-
-- Para testear el modelo con una imagen aleatoria `.png`:
-
-```bash
-./run.sh image data/7.png
-```
-
-### Resultados
-
-#### Dataset: MNIST
+### Dataset: MNIST
 
 Este experimento entrena un modelo Vision Transformer (ViT) en el dataset **MNIST** usando los siguientes hiperparámetros:
 
-##### **1. Hiperparámetros del Modelo**
+#### **1. Hiperparámetros del Modelo**
 
 | Parámetro        | Valor | Comentario                                   |
 | ---------------- | ----- | -------------------------------------------- |
@@ -214,7 +151,7 @@ Este experimento entrena un modelo Vision Transformer (ViT) en el dataset **MNIS
 | `mlp_hidden_dim` | 384   | `embedding_dim * 4`                          |
 | `dropout_rate`   | 0.2   | Regularización                               |
 
-##### **2. Hiperparámetros de Entrenamiento**
+#### **2. Hiperparámetros de Entrenamiento**
 
 | Parámetro       | Valor | Comentario                                 |
 | --------------- | ----- | ------------------------------------------ |
@@ -225,7 +162,7 @@ Este experimento entrena un modelo Vision Transformer (ViT) en el dataset **MNIS
 | `lr_init`       | 3e-4  | Tasa inicial de LR (igual a learning_rate) |
 | `warmup_frac`   | 0.1   | 10% de las épocas serán warm-up            |
 
-##### **3. Configuración de Datos**
+#### **3. Configuración de Datos**
 
 | Parámetro         | Valor          | Comentario                        |
 | ----------------- | -------------- | --------------------------------- |
@@ -236,7 +173,7 @@ Este experimento entrena un modelo Vision Transformer (ViT) en el dataset **MNIS
 | `height`, `width` | 28 × 28        | Tamaño original de imagen         |
 | `mean`, `std`     | 0.1307, 0.3081 | Normalización estándar para MNIST |
 
-##### Ejecucion
+#### Ejecucion
 
 - **Entrenamiento:**
 
@@ -246,7 +183,7 @@ Este experimento entrena un modelo Vision Transformer (ViT) en el dataset **MNIS
 
   ![](cuda_Vit/.docs/mnist_test.png)
 
-##### Modelo Preentrenado
+#### Modelo Preentrenado
 
 El modelo ya ha sido entrenado y se encuentra guardado en:
 
@@ -257,7 +194,7 @@ models/vit_mnist_test
 Para probarlo simplemente ejecuta:
 
 ```bash
-./run test
+./run.sh test
 ```
 
 ---
@@ -421,3 +358,77 @@ model_config.in_channels = 3;        // Para imágenes RGB (BloodMNIST)
 
 - **BloodMNIST** (imágenes 3x28x28):
   - Accuracy ~75-80% en alrededor de 30 épocas
+
+
+
+## Estructura del Proyecto
+
+A continuación se muestra la estructura de directorios del proyecto:
+
+```
+.
+├── app
+│   └── main.cpp
+├── CMakeLists.txt
+├── compile\_commands.json
+├── data
+│   ├── fashion\_test.csv
+│   ├── fashion\_train.csv
+│   ├── mnist\_test.csv
+│   └── mnist\_train.csv
+├── include
+│   ├── activations
+│   │   ├── GELU.hpp
+│   │   └── ReLU.hpp
+│   ├── core
+│   │   └── Tensor.hpp
+│   ├── layers
+│   │   ├── Dense.hpp
+│   │   ├── Embeddings.hpp
+│   │   ├── FeedForward.hpp
+│   │   ├── Layer.hpp
+│   │   ├── LayerNorm.hpp
+│   │   ├── MultiHeadAttention.hpp
+│   │   └── PatchEmbedding.hpp
+│   ├── losses
+│   │   ├── CrossEntropy.hpp
+│   │   └── Loss.hpp
+│   ├── model
+│   │   ├── Trainer.hpp
+│   │   ├── TransformerEncoderBlock.hpp
+│   │   └── VisionTransformer.hpp
+│   ├── optimizers
+│   │   ├── Adam.hpp
+│   │   ├── Optimizer.hpp
+│   │   └── SGD.hpp
+│   └── utils
+│   │   ├── DataReader.hpp
+│   │   └── ModelUtils.hpp
+├── README.md
+├── run.sh
+└── src
+├── activations
+│   ├── GELU.cpp
+│   └── ReLU.cpp
+├── core
+│   └── Tensor.cpp
+├── layers
+│   ├── Dense.cpp
+│   ├── Embeddings.cpp
+│   ├── FeedForward.cpp
+│   ├── LayerNorm.cpp
+│   ├── MultiHeadAttention.cpp
+│   └── PatchEmbedding.cpp
+├── losses
+│   └── CrossEntropy.cpp
+├── model
+│   ├── Trainer.cpp
+│   ├── TransformerEncoderBlock.cpp
+│   └── VisionTransformer.cpp
+├── optimizers
+│   └── Adam.cpp
+└── utils
+├── DataReader.cpp
+└── ModelUtils.cpp
+
+```
