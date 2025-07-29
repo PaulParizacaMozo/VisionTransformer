@@ -72,7 +72,8 @@ float CrossEntropy::calculate(const Tensor &yPred, const Tensor &yTrue) {
     for (size_t j = 0; j < numClasses; ++j) {
       // La pérdida se calcula solo para la clase correcta (donde yTrue es 1).
       if (yTrue(i, j) == 1.0f) {
-        totalLoss += -std::log(this->softmaxOutput(i, j) + epsilon);
+        float weight = class_weights.empty() ? 1.0f : class_weights[j];
+        totalLoss += -weight * std::log(this->softmaxOutput(i, j) + epsilon);
       }
     }
   }

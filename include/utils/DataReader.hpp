@@ -45,4 +45,8 @@ load_csv_data_train_val(const std::string& filePath,
                         float mean  = 0.2860f,
                         float stddev = 0.3530f);
 
+std::vector<float> compute_class_weights(const Tensor& y_onehot);
+
+void print_classweights(const std::vector<float>& vec);
+
 #endif // DATAREADER_HPP

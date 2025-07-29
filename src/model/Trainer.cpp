@@ -47,14 +47,12 @@ float calculate_accuracy(const Tensor &logits, const Tensor &labels) {
 /**
  * @brief Constructor del Trainer. Recibe una referencia al modelo y la configuración.
  */
-/**
- * @brief Constructor del Trainer. Recibe una referencia al modelo y la configuración.
- */
-Trainer::Trainer(VisionTransformer &model, const TrainerConfig &train_config)
+Trainer::Trainer(VisionTransformer &model, const TrainerConfig &train_config, const std::vector<float> &class_weights)
     : model(model), // <-- Guarda la referencia
       optimizer(train_config.learning_rate, 0.9f, 0.999f, 1e-8f, train_config.weight_decay), 
       loss_fn(), 
       config(train_config), logger("vit_results.csv") {
+  loss_fn.setClassWeights(class_weights);
 }
 
 /**
