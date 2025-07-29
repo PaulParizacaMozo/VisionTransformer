@@ -120,7 +120,7 @@ chmod +x run.sh
 - Para testear el modelo con una imagen aleatoria `.png`:
 
 ```bash
-./run.sh image {image_path}
+./run.sh image data/7.png
 ```
 
 - Para ejecutar el visualizador en tiempo real:

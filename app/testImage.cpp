@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     try {
-        const std::string model_name = "vit_mnist_30ep_4_8";
+        const std::string model_name = "vit_mnist_4_8";
         const std::string weights_path = model_name + ".weights";
         const std::string config_path = model_name + ".json";
 
