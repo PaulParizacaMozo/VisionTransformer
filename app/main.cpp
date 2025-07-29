@@ -33,7 +33,7 @@ int main()
     // Entrenamiento + validación
     auto [train_data, valid_data] =
         load_csv_data_train_val("data/mnist_train.csv",
-                                1.f,   // sample_frac   → 25 % del total
+                                0.5f,  // sample_frac   → 25 % del total
                                 0.80f, // train_frac    → 80 % de ese 30%
                                 0.20f, // val_frac      → 20 % de ese 30%
                                 1,

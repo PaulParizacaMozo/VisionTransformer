@@ -2218,3 +2218,191 @@ Tensor col2im_cuda(const Tensor &col_matrix,
 
     return output_image;
 }
+__global__ void cross_entropy_kernel(
+    const float *softmax_output,
+    const float *y_true,
+    float *losses,
+    size_t batch_size,
+    size_t num_classes,
+    size_t stride_softmax_0,
+    size_t stride_softmax_1,
+    size_t stride_ytrue_0,
+    size_t stride_ytrue_1,
+    float epsilon)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= batch_size)
+        return;
+
+    float sample_loss = 0.0f;
+
+    for (size_t j = 0; j < num_classes; ++j)
+    {
+        size_t y_idx = idx * stride_ytrue_0 + j * stride_ytrue_1;
+        size_t s_idx = idx * stride_softmax_0 + j * stride_softmax_1;
+        if (y_true[y_idx] == 1.0f)
+        {
+            sample_loss = -logf(softmax_output[s_idx] + epsilon);
+            break; // Solo una clase es 1
+        }
+    }
+
+    losses[idx] = sample_loss;
+}
+
+float cross_entropy_cuda(const Tensor &softmax_outpu, const Tensor &y_tru)
+{
+    // === Parte 1: Preparar tensores contiguos en GPU ===
+    const std::vector<size_t> &shape = softmax_outpu.getShape();
+    const std::vector<size_t> &strides_soft = softmax_outpu.getStrides();
+    const std::vector<size_t> &strides_true = y_tru.getStrides();
+
+    size_t batch_size = shape[0];
+    size_t num_classes = shape[1];
+    size_t total_size_soft = softmax_outpu.getSize();
+    size_t total_size_true = y_tru.getSize();
+
+    size_t offset_soft = softmax_outpu.getDataOffset();
+    size_t offset_true = y_tru.getDataOffset();
+
+    // Asumimos ambos tensores tienen mismo ndim
+    size_t ndim = shape.size();
+
+    // --- Allocar y copiar datos originales a GPU ---
+    float *d_in_soft, *d_in_true;
+    CUDA_CHECK(cudaMalloc(&d_in_soft, softmax_outpu.getDataPtr()->size() * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_in_true, y_tru.getDataPtr()->size() * sizeof(float)));
+
+    CUDA_CHECK(cudaMemcpy(d_in_soft, softmax_outpu.getDataPtr()->data(),
+                          softmax_outpu.getDataPtr()->size() * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_in_true, y_tru.getDataPtr()->data(),
+                          y_tru.getDataPtr()->size() * sizeof(float), cudaMemcpyHostToDevice));
+
+    // --- Allocar resultados contiguos ---
+    float *d_soft, *d_true;
+    CUDA_CHECK(cudaMalloc(&d_soft, total_size_soft * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_true, total_size_true * sizeof(float)));
+
+    // --- Lanzar kernels para reordenar contiguamente ---
+    dim3 threads(256);
+    dim3 blocks_soft((total_size_soft + 255) / 256);
+    dim3 blocks_true((total_size_true + 255) / 256);
+
+    if (ndim == 2)
+    {
+        copy2D<<<blocks_soft, threads>>>(
+            d_in_soft, d_soft,
+            strides_soft[0], strides_soft[1],
+            offset_soft,
+            shape[0], shape[1]);
+
+        copy2D<<<blocks_true, threads>>>(
+            d_in_true, d_true,
+            strides_true[0], strides_true[1],
+            offset_true,
+            shape[0], shape[1]);
+    }
+    else
+    {
+        CUDA_CHECK(cudaFree(d_in_soft));
+        CUDA_CHECK(cudaFree(d_in_true));
+        CUDA_CHECK(cudaFree(d_soft));
+        CUDA_CHECK(cudaFree(d_true));
+        throw std::runtime_error("cross_entropy_cuda2() solo soporta tensores 2D.");
+    }
+
+    // === Parte 2: Calcular cross entropy en GPU ===
+    float *d_losses;
+    CUDA_CHECK(cudaMalloc(&d_losses, sizeof(float) * batch_size));
+
+    const float epsilon = 1e-12f;
+
+    cross_entropy_kernel<<<(batch_size + 255) / 256, 256>>>(
+        d_soft, d_true, d_losses,
+        batch_size,
+        num_classes,
+        num_classes, 1, // Contiguo: fila mayor
+        num_classes, 1,
+        epsilon);
+
+    CUDA_CHECK(cudaGetLastError());
+
+    // === Parte 3: Reducir pérdidas ===
+    std::vector<float> h_losses(batch_size);
+    CUDA_CHECK(cudaMemcpy(h_losses.data(), d_losses, sizeof(float) * batch_size, cudaMemcpyDeviceToHost));
+
+    float total_loss = std::accumulate(h_losses.begin(), h_losses.end(), 0.0f);
+    total_loss /= static_cast<float>(batch_size);
+
+    // === Liberar memoria ===
+    CUDA_CHECK(cudaFree(d_in_soft));
+    CUDA_CHECK(cudaFree(d_in_true));
+    CUDA_CHECK(cudaFree(d_soft));
+    CUDA_CHECK(cudaFree(d_true));
+    CUDA_CHECK(cudaFree(d_losses));
+
+    return total_loss;
+}
+
+__global__ void crossentropy_backward_kernel(
+    const float *softmax_output,
+    const float *y_true,
+    float *gradient_out,
+    size_t batch_size,
+    size_t num_classes)
+{
+    int i = blockIdx.y * blockDim.y + threadIdx.y; // batch idx
+    int j = blockIdx.x * blockDim.x + threadIdx.x; // class idx
+
+    if (i < batch_size && j < num_classes)
+    {
+        int idx = i * num_classes + j;
+        gradient_out[idx] = (softmax_output[idx] - y_true[idx]) / static_cast<float>(batch_size);
+    }
+}
+Tensor ce_backward_cuda(const Tensor &softmax_output_cpu, const Tensor &y_true_cpu)
+{
+    // Convertir a layout contiguo para acceso directo
+    // Tensor softmax_output_cpu = contiguous_cuda(softmax_output_cp);
+    // Tensor y_true_cpu = contiguous_cuda(y_true_cp);
+
+    const std::vector<size_t> &shape = softmax_output_cpu.getShape();
+    size_t batch_size = shape[0];
+    size_t num_classes = shape[1];
+    size_t total_size = batch_size * num_classes;
+
+    const float *h_soft = softmax_output_cpu.getDataPtr()->data();
+    const float *h_true = y_true_cpu.getDataPtr()->data();
+
+    // Allocate and copy input to device
+    float *d_soft, *d_true, *d_grad;
+    CUDA_CHECK(cudaMalloc(&d_soft, total_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_true, total_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_grad, total_size * sizeof(float)));
+
+    CUDA_CHECK(cudaMemcpy(d_soft, h_soft, total_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_true, h_true, total_size * sizeof(float), cudaMemcpyHostToDevice));
+
+    // Configurar ejecución
+    dim3 threads(32, 32);
+    dim3 blocks((num_classes + threads.x - 1) / threads.x,
+                (batch_size + threads.y - 1) / threads.y);
+
+    // Lanzar kernel
+    crossentropy_backward_kernel<<<blocks, threads>>>(
+        d_soft, d_true, d_grad,
+        batch_size, num_classes);
+
+    CUDA_CHECK(cudaGetLastError());
+
+    // Copiar resultado a host
+    Tensor grad_cpu(shape);
+    CUDA_CHECK(cudaMemcpy(grad_cpu.getData(), d_grad,
+                          total_size * sizeof(float), cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_soft));
+    CUDA_CHECK(cudaFree(d_true));
+    CUDA_CHECK(cudaFree(d_grad));
+
+    return grad_cpu;
+}

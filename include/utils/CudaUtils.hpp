@@ -39,4 +39,6 @@ Tensor col2im_cuda(const Tensor &col_matrix,
                    size_t kernel_size,
                    size_t stride,
                    size_t padding);
+float cross_entropy_cuda(const Tensor &softmax_output, const Tensor &y_true);
+Tensor ce_backward_cuda(const Tensor &softmax_output_cpu, const Tensor &y_true_cpu);
 #endif // CUDAUTILS_HPP

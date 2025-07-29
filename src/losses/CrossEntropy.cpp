@@ -69,31 +69,41 @@ float CrossEntropy::calculate(const Tensor &yPred, const Tensor &yTrue)
   //    Se guarda el resultado para reutilizarlo en el backward pass.
   // this->softmaxOutput = softmax(yPred);
   this->softmaxOutput = softmax_cuda(yPred);
+  return cross_entropy_cuda(this->softmaxOutput, yTrue);
+
   // if (verify(this->softmaxOutput, soft_cuda, 1e-5f) == false)
   // {
   //   throw std::runtime_error("Error en la verificación de softmax.");
   // }
 
   // 2. Calcular la pérdida de entropía cruzada.
-  const size_t batchSize = yPred.getShape()[0];
-  const size_t numClasses = yPred.getShape()[1];
-  float totalLoss = 0.0f;
-  const float epsilon = 1e-12; // Pequeño valor para evitar log(0).
+  //   const size_t batchSize = yPred.getShape()[0];
+  //   const size_t numClasses = yPred.getShape()[1];
+  //   float totalLoss = 0.0f;
+  //   const float epsilon = 1e-12; // Pequeño valor para evitar log(0).
 
-#pragma omp parallel for reduction(+ : totalLoss)
-  for (size_t i = 0; i < batchSize; ++i)
-  {
-    for (size_t j = 0; j < numClasses; ++j)
-    {
-      // La pérdida se calcula solo para la clase correcta (donde yTrue es 1).
-      if (yTrue(i, j) == 1.0f)
-      {
-        totalLoss += -std::log(this->softmaxOutput(i, j) + epsilon);
-      }
-    }
-  }
+  // #pragma omp parallel for reduction(+ : totalLoss)
+  //   for (size_t i = 0; i < batchSize; ++i)
+  //   {
+  //     for (size_t j = 0; j < numClasses; ++j)
+  //     {
+  //       // La pérdida se calcula solo para la clase correcta (donde yTrue es 1).
+  //       if (yTrue(i, j) == 1.0f)
+  //       {
+  //         totalLoss += -std::log(this->softmaxOutput(i, j) + epsilon);
+  //       }
+  //     }
+  //   }
 
-  return totalLoss / batchSize; // Devolver la pérdida promedio por muestra.
+  //   float r_cuda = cross_entropy_cuda(this->softmaxOutput, yTrue);
+  //   float out = totalLoss / batchSize;
+  //   if (std::abs(r_cuda - out) > 1e-5f)
+  //   {
+  //     throw std::runtime_error("Error en la verificación de cross_entropy_cuda - CPU: " + std::to_string(out) +
+  //                              ", CUDA: " + std::to_string(r_cuda));
+  //   }
+
+  //   return out; // Devolver la pérdida promedio por muestra.
 }
 
 /**
@@ -101,6 +111,7 @@ float CrossEntropy::calculate(const Tensor &yPred, const Tensor &yTrue)
  */
 Tensor CrossEntropy::backward(const Tensor & /*yPred*/, const Tensor &yTrue)
 {
+  return ce_backward_cuda(this->softmaxOutput, yTrue);
   // El gradiente combinado de Softmax(yPred) y CrossEntropy es simplemente:
   //   gradiente = softmax(yPred) - yTrue
   // Esta simplificación es la razón principal para combinar ambas funciones.
@@ -108,22 +119,28 @@ Tensor CrossEntropy::backward(const Tensor & /*yPred*/, const Tensor &yTrue)
   // Reutilizamos softmaxOutput calculado en `calculate`.
   // Es importante notar que no se modifica `softmaxOutput` directamente,
   // sino que se crea una copia que será el gradiente.
-  Tensor gradient = this->softmaxOutput;
 
-  const size_t batchSize = yTrue.getShape()[0];
-  const size_t numClasses = yTrue.getShape()[1];
+  //   Tensor gradient_cuda = ce_backward_cuda(this->softmaxOutput, yTrue);
+  //   Tensor gradient = this->softmaxOutput;
 
-#pragma omp parallel for
-  for (size_t i = 0; i < batchSize; ++i)
-  {
-    for (size_t j = 0; j < numClasses; ++j)
-    {
-      // Calcula `(probabilidad - etiqueta)` y normaliza por el tamaño del batch.
-      // La normalización aquí asegura que la magnitud del gradiente no dependa
-      // del tamaño del batch, lo que estabiliza el entrenamiento con diferentes tamaños de batch.
-      gradient(i, j) = (gradient(i, j) - yTrue(i, j)) / batchSize;
-    }
-  }
+  //   const size_t batchSize = yTrue.getShape()[0];
+  //   const size_t numClasses = yTrue.getShape()[1];
 
-  return gradient;
+  // #pragma omp parallel for
+  //   for (size_t i = 0; i < batchSize; ++i)
+  //   {
+  //     for (size_t j = 0; j < numClasses; ++j)
+  //     {
+  //       // Calcula `(probabilidad - etiqueta)` y normaliza por el tamaño del batch.
+  //       // La normalización aquí asegura que la magnitud del gradiente no dependa
+  //       // del tamaño del batch, lo que estabiliza el entrenamiento con diferentes tamaños de batch.
+  //       gradient(i, j) = (gradient(i, j) - yTrue(i, j)) / batchSize;
+  //     }
+  //   }
+
+  //   if (verify(gradient, gradient_cuda, 1e-5f) == false)
+  //   {
+  //     throw std::runtime_error("Error en la verificación de softmax_backward_cuda.");
+  //   }
+  //   return gradient;
 }
