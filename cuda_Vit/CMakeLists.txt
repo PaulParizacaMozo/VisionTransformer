@@ -11,6 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Establecemos host de CUDA
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_ARCHITECTURES 61 70 75 80 86) # soporte para arquitecturas
 
 # --- Configuración de Tipos de Compilación y Flags ---
 if(NOT CMAKE_BUILD_TYPE)
