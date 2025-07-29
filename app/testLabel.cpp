@@ -38,9 +38,9 @@ int main(int argc, char** argv) {
 
     try {
         // Cargar modelo
-        ViTConfig config = ModelUtils::load_config("models/vit_mnist_30ep_4_8.json");
+        ViTConfig config = ModelUtils::load_config("models/vit_mnist_4_8.json");
         VisionTransformer model(config);
-        ModelUtils::load_weights(model, "models/vit_mnist_30ep_4_8.weights");
+        ModelUtils::load_weights(model, "models/vit_mnist_4_8.weights");
 
         // Procesar imagen
         Tensor input = load_image_with_stb(argv[1]);
