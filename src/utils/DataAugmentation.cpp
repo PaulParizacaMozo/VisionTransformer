@@ -87,14 +87,14 @@ Tensor DataAugmentation::random_translate(const Tensor& img) {
     float tx = dist(rng) * img.getShape()[3];  // Desplazamiento en X
     float ty = dist(rng) * img.getShape()[2];  // Desplazamiento en Y
 
-    size_t height = img.getShape()[2];
-    size_t width = img.getShape()[3];
+    int height = static_cast<int>(img.getShape()[2]);
+    int width  = static_cast<int>(img.getShape()[3]);
     Tensor translated_img = img.clone();
 
-    for (size_t h = 0; h < height; ++h) {
-        for (size_t w = 0; w < width; ++w) {
-            int src_h = (int)h - (int)ty;
-            int src_w = (int)w - (int)tx;
+    for (int h = 0; h < height; ++h) {
+        for (int w = 0; w < width; ++w) {
+            int src_h = h - static_cast<int>(ty);
+            int src_w = w - static_cast<int>(tx);
 
             if (src_h >= 0 && src_h < height && src_w >= 0 && src_w < width) {
                 for (size_t c = 0; c < img.getShape()[1]; ++c) {
@@ -102,7 +102,7 @@ Tensor DataAugmentation::random_translate(const Tensor& img) {
                 }
             } else {
                 for (size_t c = 0; c < img.getShape()[1]; ++c) {
-                    translated_img(0, c, h, w) = 0.0f;  // Rellenar con 0
+                    translated_img(0, c, h, w) = 0.0f;
                 }
             }
         }

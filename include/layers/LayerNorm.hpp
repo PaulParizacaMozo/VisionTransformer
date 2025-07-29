@@ -61,8 +61,8 @@ public:
   std::string getName() const override { return "LayerNorm"; }
 
 private:
-  float epsilon;
   size_t featureSize;
+  float epsilon;
 
   // Parámetros entrenables
   Tensor gamma; ///< Parámetro de escala, forma {1, feature_size}.

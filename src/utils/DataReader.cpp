@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <vector>
 #include <numeric>
+#include <random>
 
 // --- Funciones Auxiliares (privadas a este archivo) ---
 namespace {
@@ -87,7 +88,7 @@ std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
 
   // Barajar los índices para tomar una muestra aleatoria
   std::srand(static_cast<unsigned int>(std::time(nullptr)));
-  std::random_shuffle(indices.begin(), indices.end());
+  std::shuffle(indices.begin(), indices.end(), std::mt19937(std::random_device{}()));
 
   size_t samples_to_load = static_cast<size_t>(total_samples * sample_fraction);
   if (samples_to_load == 0 && total_samples > 0)

@@ -16,7 +16,7 @@ Tensor GELU::forward(const Tensor &input, bool isTraining) {
   }
 
   Tensor result(input.getShape());
-  const auto &shape = input.getShape();
+  // const auto &shape = input.getShape();
 
   // Implementación genérica que funciona para cualquier tensor contiguo.
   // Usar getData() es más rápido si sabemos que el tensor es contiguo.
@@ -43,7 +43,7 @@ Tensor GELU::forward(const Tensor &input, bool isTraining) {
 
 Tensor GELU::backward(const Tensor &outputGradient) {
   Tensor inputGradient(inputTensor.getShape());
-  const auto &shape = inputTensor.getShape();
+  // const auto &shape = inputTensor.getShape();
 
   // La derivada de la aproximación de GELU es más compleja.
   // dGELU/dx = 0.5 * tanh(inner) + 0.5 * x * sech^2(inner) * d(inner)/dx
