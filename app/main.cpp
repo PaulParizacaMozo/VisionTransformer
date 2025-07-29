@@ -49,8 +49,9 @@ int main() {
     //   load_csv_data("data/bloodmnist_val_gray.csv", 1.00f, 1, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
 
     auto class_weights = compute_class_weights(train_data.second);
+    ModelUtils::print_hyperparameters_box(model_config, train_config);
     print_classweights(class_weights);
-    
+
     // --- 3. Crear Modelo y Entrenador ---
     VisionTransformer model(model_config);
     Trainer trainer(model, train_config, class_weights);

@@ -2,6 +2,8 @@
 #include "utils/CudaUtils.hpp"
 #include <fstream>
 #include <iostream>
+#include <iomanip>
+#include <string>
 #include <stdexcept>
 #include "utils/json.hpp"
 
@@ -158,6 +160,44 @@ namespace ModelUtils
 
     std::cout << "Configuración cargada correctamente." << std::endl;
     return config;
+  }
+
+  void print_hyperparameters_box(const ViTConfig& model_config, const TrainerConfig& train_config) {
+    const int name_width = 30;
+    const int value_width = 20;
+
+    auto print_row = [&](const std::string& name, const std::string& value) {
+        std::cout << "║ " << std::left << std::setw(name_width) << name
+                  << " : " << std::right << std::setw(value_width) << value << " ║\n";
+    };
+
+    std::string border(name_width + value_width + 5, '=');
+
+    std::cout << "\n╔" << border << "╗\n";
+    std::cout << "║" << std::setw(name_width + value_width + 5) << std::left
+              << "            CONFIGURACIÓN DE HIPERPARÁMETROS           " << "║\n";
+    std::cout << "╠" << border << "╣\n";
+
+    // Modelo
+    print_row("Embedding dim", std::to_string(model_config.embedding_dim));
+    print_row("Nro de capas", std::to_string(model_config.num_layers));
+    print_row("Nro de heads", std::to_string(model_config.num_heads));
+    print_row("Patch size", std::to_string(model_config.patch_size));
+    print_row("Nro de clases", std::to_string(model_config.num_classes));
+    print_row("Canales de entrada", std::to_string(model_config.in_channels));
+    print_row("Dim MLP oculta", std::to_string(model_config.mlp_hidden_dim));
+    print_row("Dropout rate", std::to_string(model_config.dropout_rate));
+
+    std::cout << "╠" << border << "╣\n";
+
+    // Entrenamiento
+    print_row("Epocas   ", std::to_string(train_config.epochs));
+    print_row("Batch size", std::to_string(train_config.batch_size));
+    print_row("Learning rate", std::to_string(train_config.learning_rate));
+    print_row("Weight decay", std::to_string(train_config.weight_decay));
+    print_row("Warmup fraction", std::to_string(train_config.warmup_frac));
+
+    std::cout << "╚" << border << "╝\n";
   }
 
 } // namespace ModelUtils

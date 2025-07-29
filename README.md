@@ -4,7 +4,7 @@
 ![C++](https://img.shields.io/badge/c++-%2300599C.svg?style=for-the-badge&logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-%23008FBA.svg?style=for-the-badge&logo=cmake&logoColor=white)
 
-> **💡 Puedes ejecutar el entrenamiento en GPU con CUDA desde [Google Colab](https://colab.research.google.com/drive/1n7AIsbDGGtv3eTVO681Enz35pO3e5fWF?usp=sharing):**  
+> **💡 Puedes ejecutar el entrenamiento en GPU con C++/CUDA desde [Google Colab](https://colab.research.google.com/drive/1n7AIsbDGGtv3eTVO681Enz35pO3e5fWF?usp=sharing):**  
 > [![Abrir en Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1n7AIsbDGGtv3eTVO681Enz35pO3e5fWF?usp=sharing)
 
 ---
@@ -36,6 +36,9 @@ El proyecto utiliza un archivo comprimido llamado `data.zip` que contiene los co
    - `fashion_train.csv`
    - `mnist_test.csv`
    - `mnist_train.csv`
+   - `bloodmnist_test.csv`
+   - `bloodmnist_train.csv`
+   - `bloodmnist_val.csv`
 
 ```bash
 wget https://github.com/PaulParizacaMozo/VisionTransformer/releases/download/data/data.zip
@@ -88,6 +91,9 @@ El proyecto utiliza un archivo comprimido llamado `data.zip` que contiene los co
    - `fashion_train.csv`
    - `mnist_test.csv`
    - `mnist_train.csv`
+   - `bloodmnist_test.csv`
+   - `bloodmnist_train.csv`
+   - `bloodmnist_val.csv`
 
 ```bash
 wget https://github.com/PaulParizacaMozo/VisionTransformer/releases/download/data/data.zip
@@ -296,14 +302,6 @@ Cada bloque contiene:
 | `learning_rate`  | 3e-4  | Tasa de aprendizaje            |
 | `weight_decay`   | 1e-4  | Decaimiento de pesos           |
 
-## Compilación y Ejecución
-
-### Configuración de datos
-
-1. Descargar conjuntos de datos MNIST en formato CSV
-2. Colocar en directorio `data/`:
-   - `mnist_train.csv`
-   - `mnist_test.csv`
 
 ## Flujo de Entrenamiento
 
@@ -335,31 +333,22 @@ Cada bloque contiene:
    - Pesos en formato binario (`vit_mnist.weights`)
    - Configuración en JSON (`vit_mnist.json`)
 
-## Personalización
-
-Para usar con otros conjuntos de datos:
-
-```cpp
-ViTConfig model_config;
-model_config.embedding_dim = 128;   // Aumentar dimensión
-model_config.num_classes = 10;      // Para datasets con más clases
-model_config.in_channels = 3;        // Para imágenes RGB (BloodMNIST)
-```
-
 ## Resultados Esperados
 
 - **MNIST**:
-
-  - Accuracy >90% en alrededor de 10 épocas
+  - Accuracy >90% en alrededor de 10 épocas.
+  - Accuracy máximo alcanzado: **98% en validación**.
+  ![MNIST Plot](.docs/training_plots_ViT_MNIST_28x28.png)
 
 - **FashionMNIST**:
+  - Accuracy >85% en alrededor de 20 épocas.
+  - Accuracy máximo alcanzado: **87% en validación**.
+  ![FashionMNIST Plot](.docs/training_plots_ViT_Fashion_MNIST_28x28.png)
 
-  - Accuracy >85% en alrededor de 20 épocas
-
-- **BloodMNIST** (imágenes 3x28x28):
-  - Accuracy ~75-80% en alrededor de 30 épocas
-
-
+- **BloodMNIST** (imágenes 3×28×28):
+  - Accuracy ~75–80% en alrededor de 30 épocas.
+  - Accuracy máximo alcanzado: **80% en validación**.
+  ![BloodMNIST Plot](.docs/training_plots_ViT_Blood_MNIST_28x28.png)
 
 ## Estructura del Proyecto
 

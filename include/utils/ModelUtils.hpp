@@ -4,6 +4,7 @@
 #include "model/VisionTransformer.hpp" // Incluimos el modelo para saber de dónde sacar los pesos
 #include <string>
 #include <vector>
+#include "model/Trainer.hpp"
 
 namespace ModelUtils {
 
@@ -42,6 +43,13 @@ void save_config(const ViTConfig& config, const std::string& filePath);
  * @return Una estructura ViTConfig con los valores cargados.
  */
 ViTConfig load_config(const std::string& filePath);
+
+/**
+ * @brief Muestra los hiperparametros configurados por consola
+ * @param ViTConfig: Configuracion del modelo
+ * @param TrainerConfig: Configuracion de entrenamiento
+ */
+void print_hyperparameters_box(const ViTConfig& model_config, const TrainerConfig& train_config);
 
 } // namespace ModelUtils
 
