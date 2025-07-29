@@ -74,7 +74,12 @@ A continuación se muestra la estructura de directorios del proyecto:
 
 ## Instrucciones para ejecutar el proyecto
 
-### 1. Descargar y descomprimir los datos
+### 1. Clonar repositorio, Descargar y descomprimir los datos
+
+```bash
+git clone https://github.com/PaulParizacaMozo/VisionTransformer.git
+cd VisionTransformer
+```
 
 El proyecto utiliza un archivo comprimido llamado `data.zip` que contiene los conjuntos de datos necesarios para la ejecución (Fashion MNIST y MNIST).
 
@@ -84,6 +89,11 @@ El proyecto utiliza un archivo comprimido llamado `data.zip` que contiene los co
    - `fashion_train.csv`
    - `mnist_test.csv`
    - `mnist_train.csv`
+
+```bash
+wget https://github.com/PaulParizacaMozo/VisionTransformer/releases/download/data/data.zip
+7z x data.zip
+```
 
 ### 2. Preparar el script `run.sh`
 
@@ -100,16 +110,19 @@ chmod +x run.sh
 ```bash
 ./run.sh
 ```
+
 - Para testear el modelo en el conjunto de pruebas:
 
 ```bash
 ./run.sh test
 ```
+
 - Para testear el modelo con una imagen aleatoria `.png`:
 
 ```bash
 ./run.sh image {image_path}
 ```
+
 - Para ejecutar el visualizador en tiempo real:
 
 ```bash
@@ -125,13 +138,15 @@ Este proyecto implementa una arquitectura Vision Transformer (ViT) desde cero en
 ## Arquitectura del Modelo
 
 ### Diagrama de la Arquitectura
+
 ![Vision Transformer Architecture Diagram](IA_VIT_DIAGRAM.png)
 
 ### Componentes Principales
 
 #### 1. Preprocesamiento de Entrada (Imagen)
+
 - **Entrada**: Imágenes 28x28 píxeles (1 canal para MNIST)
-- **División en parches**: 
+- **División en parches**:
   - Tamaño de parche: 14x14
   - Parches generados: 4 (28/14 × 28/14)
 - **Token [CLS]**:
@@ -141,6 +156,7 @@ Este proyecto implementa una arquitectura Vision Transformer (ViT) desde cero en
   - Cada parche (196 píxeles) → vector de 64 dimensiones
 
 #### 2. Input Embedding
+
 - **Embeddings de parches**:
   - Proyección lineal de 196 → 64 dimensiones
 - **Token [CLS]**:
@@ -149,6 +165,7 @@ Este proyecto implementa una arquitectura Vision Transformer (ViT) desde cero en
   - Formato: `[batch_size, 5, 64]` (1 token CLS + 4 parches)
 
 #### 3. Positional Encoding
+
 - **Codificación posicional**:
   - Embeddings aprendidos para cada posición
   - 5 posiciones: [CLS] + 4 parches
@@ -157,9 +174,11 @@ Este proyecto implementa una arquitectura Vision Transformer (ViT) desde cero en
   - Salida: `[batch_size, 5, 64]`
 
 #### 4. Bloques Encoder (8 capas)
+
 Cada bloque contiene:
 
 ##### 3.A. Multi-Head Attention (16 cabezas)
+
 - **Proyecciones lineales**:
   - Entrada dividida en 16 cabezas (dimensión por cabeza = 4)
   - `Q_i = X @ W_i^Q`, `K_i = X @ W_i^K`, `V_i = X @ W_i^V`
@@ -171,20 +190,24 @@ Cada bloque contiene:
   - `Output_MHA = Concat @ W_O`
 
 ##### 3.B. Add & Norm
+
 - Conexión residual + Layer Normalization
 - `LayerNorm(X + Output_MHA)`
 
 ##### 3.C. Position-wise FFN
+
 - **MLP de 2 capas**:
   1. `Linear(64 → 256)` + activación GELU
   2. `Linear(256 → 64)`
 - Dropout (20%)
 
 ##### 3.D. Add & Norm
+
 - Conexión residual + Layer Normalization
 - `LayerNorm(Input_FFN + Output_FFN)`
 
 #### 5. Salida y Clasificación
+
 - **Extracción del token [CLS]**:
   - Primera posición de la secuencia (`índice=0`)
   - Vector de 64 dimensiones
@@ -209,7 +232,8 @@ Cada bloque contiene:
 
 ## Compilación y Ejecución
 
-### Configuración de datos:
+### Configuración de datos
+
 1. Descargar conjuntos de datos MNIST en formato CSV
 2. Colocar en directorio `data/`:
    - `mnist_train.csv`
@@ -244,6 +268,7 @@ Cada bloque contiene:
 ## Personalización
 
 Para usar con otros conjuntos de datos:
+
 ```cpp
 ViTConfig model_config;
 model_config.embedding_dim = 128;   // Aumentar dimensión

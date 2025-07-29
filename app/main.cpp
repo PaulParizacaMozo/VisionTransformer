@@ -9,18 +9,18 @@ int main() {
   try {
     // --- 1. Definir Configuraciones ---
     ViTConfig model_config;
-    model_config.embedding_dim = 96; // 128 - 196 
-    model_config.num_layers = 8; // 6 
-    model_config.num_heads = 8;
-    model_config.patch_size = 28;
-    model_config.num_classes = 8;
+    model_config.embedding_dim = 64; // 128 - 196 
+    model_config.num_layers = 2; // 6 
+    model_config.num_heads = 4;
+    model_config.patch_size = 14;
+    model_config.num_classes = 10;
     model_config.in_channels = 1;
     model_config.mlp_hidden_dim = model_config.embedding_dim * 4;
     model_config.dropout_rate = 0.2;
 
     TrainerConfig train_config;
     train_config.epochs = 30;
-    train_config.batch_size = 64;// 128
+    train_config.batch_size = 128;// 128
     train_config.learning_rate = 3e-4f;
     train_config.weight_decay = 1e-4f; // 0.01f
     train_config.lr_init = train_config.learning_rate;
@@ -31,22 +31,22 @@ int main() {
     
     // Para mnist y fashin
     // Entrenamiento + validación
-    // auto [train_data, valid_data] =
-    // load_csv_data_train_val("data/mnist_train.csv",
-    //                         0.5f,   // sample_frac   → 25 % del total
-    //                         0.80f,   // train_frac    → 80 % de ese 30%
-    //                         0.20f,   // val_frac      → 20 % de ese 30%
-    //                         1,
-    //                         28,
-    //                         28,
-    //                         model_config.num_classes,
-    //                         0.1307f, 0.3081f);
+     auto [train_data, valid_data] =
+     load_csv_data_train_val("data/mnist_train.csv",
+                             0.5f,   // sample_frac   → 25 % del total
+                             0.80f,   // train_frac    → 80 % de ese 30%
+                             0.20f,   // val_frac      → 20 % de ese 30%
+                             1,
+                             28,
+                             28,
+                             model_config.num_classes,
+                             0.1307f, 0.3081f);
 
     // Para bloodmnist 3x28x28
-    auto train_data =
-       load_csv_data("data/bloodmnist_train_gray.csv", 1.00f, 1, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
-    auto valid_data =
-       load_csv_data("data/bloodmnist_val_gray.csv", 1.00f, 1, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
+    //auto train_data =
+    //   load_csv_data("data/bloodmnist_train_gray.csv", 1.00f, 1, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
+    //auto valid_data =
+    //   load_csv_data("data/bloodmnist_val_gray.csv", 1.00f, 1, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
 
     auto class_weights = compute_class_weights(train_data.second);
     print_classweights(class_weights);
@@ -61,7 +61,7 @@ int main() {
     std::cout << "\n¡Entrenamiento completado!" << std::endl;
 
     // --- 5. Guardar el Modelo ---
-    const std::string model_name = "vit_mnist_test";
+    const std::string model_name = "models/vit_mnist_test";
     const std::string weights_path = model_name + ".weights";
     const std::string config_path = model_name + ".json";
     std::cout << "\nGuardando pesos del modelo entrenado en: " << weights_path << std::endl;
