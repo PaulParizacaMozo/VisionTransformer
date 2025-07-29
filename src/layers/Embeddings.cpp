@@ -28,17 +28,12 @@ Tensor Embeddings::forward(const Tensor &input, bool isTraining) {
   Tensor patch_embeddings = this->patcher->forward(input, isTraining); // -> {B, N, D}
 
   // 2. Expandir el token CLS para que coincida con el tamaño del batch
-  // expand() crea una vista {B, 1, D} sin copiar memoria.
-  // Tensor cls_token_batch({batchSize, 1, this->embedding_dim});
-
-  // 2. Expandir el token CLS para que coincida con el tamaño del batch
   Tensor cls_token_batch = clsToken.expand({batchSize, 1, embedding_dim});
   
   // 3. Concatenar el CLS token y los parches a lo largo del eje de la secuencia (axis=1)
   Tensor embeddings_with_cls = concatenate({cls_token_batch, patch_embeddings}, 1); // -> {B, N+1, D}
 
-  // 4. Añadir la codificación posicional
-  // addBroadcast suma {1, N+1, D} a cada muestra de {B, N+1, D}
+  // 4. Añadir la codificación posicional (addBroadcast suma {1, N+1, D} a cada muestra de {B, N+1, D})
   embeddings_with_cls.addBroadcast(this->positionalEncoding);
 
   return embeddings_with_cls;

@@ -178,12 +178,6 @@ std::pair<float, float> Trainer::train_epoch(const Tensor &X_train, const Tensor
       Tensor x_sample = X_train.slice(0, data_idx, 1);
       Tensor y_sample = y_train.slice(0, data_idx, 1);
 
-      // x_sample = random_flip(x_sample);                // Flip Horizontal
-      // x_sample = random_crop(x_sample, 24, 4);         // Recorte 24x24 con padding 4
-      // x_sample = random_rotation(x_sample, 10.0f);        // Rotación aleatoria 30°
-      // x_sample = random_translation(x_sample, 4);         // Traslación aleatoria
-      // x_sample = random_zoom(x_sample, 0.9f, 1.1f);       // Zoom aleatorio
-
       for (size_t c = 0; c < channels; ++c)
       {
         for (size_t h = 0; h < height; ++h)

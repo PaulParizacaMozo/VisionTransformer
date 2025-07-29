@@ -27,8 +27,6 @@ Tensor oneHotEncode(const std::vector<int> &labels, int num_classes) {
 } // namespace
 
 // --- Implementación de la Función Principal ---
-
-// --- Implementación de la Función Principal ---
 std::pair<Tensor, Tensor> load_csv_data(const std::string &filePath,
                                         float sample_fraction,
                                         size_t channels,
