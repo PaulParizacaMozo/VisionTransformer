@@ -13,5 +13,6 @@ Makefile
 
 #Configs 
 .clang-format
+*.csv
 frames
 .vscode
