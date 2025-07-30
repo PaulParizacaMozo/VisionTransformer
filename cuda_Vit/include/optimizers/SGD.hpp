@@ -1,7 +1,7 @@
 #ifndef SGD_HPP
 #define SGD_HPP
 
-#include "optimizers/Optimizer.hpp"
+#include "optimizers/Optimizer.cuh"
 
 /**
  * @class SGD
@@ -15,7 +15,8 @@
  * Aunque existen optimizadores más avanzados (como Adam), SGD (a menudo con
  * momento) sigue siendo una base sólida y muy utilizada.
  */
-class SGD : public Optimizer {
+class SGD : public Optimizer
+{
 public:
   /**
    * @brief Constructor para el optimizador SGD.

@@ -1,4 +1,4 @@
-#include "utils/CudaUtils.hpp"
+#include "utils/CudaUtils.cuh"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <iostream>
@@ -2221,6 +2221,7 @@ Tensor col2im_cuda(const Tensor &col_matrix,
 __global__ void cross_entropy_kernel(
     const float *softmax_output,
     const float *y_true,
+    const float *class_weights,
     float *losses,
     size_t batch_size,
     size_t num_classes,
@@ -2240,9 +2241,12 @@ __global__ void cross_entropy_kernel(
     {
         size_t y_idx = idx * stride_ytrue_0 + j * stride_ytrue_1;
         size_t s_idx = idx * stride_softmax_0 + j * stride_softmax_1;
+
         if (y_true[y_idx] == 1.0f)
         {
-            sample_loss = -logf(softmax_output[s_idx] + epsilon);
+            float prob = softmax_output[s_idx] + epsilon;
+            float weight = (class_weights != nullptr) ? class_weights[j] : 1.0f;
+            sample_loss = -weight * logf(prob);
             break; // Solo una clase es 1
         }
     }
@@ -2250,57 +2254,51 @@ __global__ void cross_entropy_kernel(
     losses[idx] = sample_loss;
 }
 
-float cross_entropy_cuda(const Tensor &softmax_outpu, const Tensor &y_tru)
+float cross_entropy_cuda(const Tensor &softmax_output, const Tensor &y_true, const std::vector<float> &class_weights)
 {
-    // === Parte 1: Preparar tensores contiguos en GPU ===
-    const std::vector<size_t> &shape = softmax_outpu.getShape();
-    const std::vector<size_t> &strides_soft = softmax_outpu.getStrides();
-    const std::vector<size_t> &strides_true = y_tru.getStrides();
+    const auto &shape = softmax_output.getShape();
+    const auto &strides_soft = softmax_output.getStrides();
+    const auto &strides_true = y_true.getStrides();
 
     size_t batch_size = shape[0];
     size_t num_classes = shape[1];
-    size_t total_size_soft = softmax_outpu.getSize();
-    size_t total_size_true = y_tru.getSize();
+    size_t total_size_soft = softmax_output.getSize();
+    size_t total_size_true = y_true.getSize();
 
-    size_t offset_soft = softmax_outpu.getDataOffset();
-    size_t offset_true = y_tru.getDataOffset();
-
-    // Asumimos ambos tensores tienen mismo ndim
+    size_t offset_soft = softmax_output.getDataOffset();
+    size_t offset_true = y_true.getDataOffset();
     size_t ndim = shape.size();
 
-    // --- Allocar y copiar datos originales a GPU ---
+    // Alloc & copy original data
     float *d_in_soft, *d_in_true;
-    CUDA_CHECK(cudaMalloc(&d_in_soft, softmax_outpu.getDataPtr()->size() * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_in_true, y_tru.getDataPtr()->size() * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_in_soft, softmax_output.getDataPtr()->size() * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_in_true, y_true.getDataPtr()->size() * sizeof(float)));
 
-    CUDA_CHECK(cudaMemcpy(d_in_soft, softmax_outpu.getDataPtr()->data(),
-                          softmax_outpu.getDataPtr()->size() * sizeof(float), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_in_true, y_tru.getDataPtr()->data(),
-                          y_tru.getDataPtr()->size() * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_in_soft, softmax_output.getDataPtr()->data(),
+                          softmax_output.getDataPtr()->size() * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_in_true, y_true.getDataPtr()->data(),
+                          y_true.getDataPtr()->size() * sizeof(float), cudaMemcpyHostToDevice));
 
-    // --- Allocar resultados contiguos ---
+    // Tensors in contiguous layout
     float *d_soft, *d_true;
     CUDA_CHECK(cudaMalloc(&d_soft, total_size_soft * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_true, total_size_true * sizeof(float)));
 
-    // --- Lanzar kernels para reordenar contiguamente ---
     dim3 threads(256);
     dim3 blocks_soft((total_size_soft + 255) / 256);
     dim3 blocks_true((total_size_true + 255) / 256);
 
     if (ndim == 2)
     {
-        copy2D<<<blocks_soft, threads>>>(
-            d_in_soft, d_soft,
-            strides_soft[0], strides_soft[1],
-            offset_soft,
-            shape[0], shape[1]);
+        copy2D<<<blocks_soft, threads>>>(d_in_soft, d_soft,
+                                         strides_soft[0], strides_soft[1],
+                                         offset_soft,
+                                         shape[0], shape[1]);
 
-        copy2D<<<blocks_true, threads>>>(
-            d_in_true, d_true,
-            strides_true[0], strides_true[1],
-            offset_true,
-            shape[0], shape[1]);
+        copy2D<<<blocks_true, threads>>>(d_in_true, d_true,
+                                         strides_true[0], strides_true[1],
+                                         offset_true,
+                                         shape[0], shape[1]);
     }
     else
     {
@@ -2308,38 +2306,46 @@ float cross_entropy_cuda(const Tensor &softmax_outpu, const Tensor &y_tru)
         CUDA_CHECK(cudaFree(d_in_true));
         CUDA_CHECK(cudaFree(d_soft));
         CUDA_CHECK(cudaFree(d_true));
-        throw std::runtime_error("cross_entropy_cuda2() solo soporta tensores 2D.");
+        throw std::runtime_error("cross_entropy_cuda only supports 2D tensors.");
     }
 
-    // === Parte 2: Calcular cross entropy en GPU ===
+    // Allocate class weights
+    float *d_weights = nullptr;
+    if (!class_weights.empty())
+    {
+        CUDA_CHECK(cudaMalloc(&d_weights, num_classes * sizeof(float)));
+        CUDA_CHECK(cudaMemcpy(d_weights, class_weights.data(), num_classes * sizeof(float), cudaMemcpyHostToDevice));
+    }
+
+    // Compute cross-entropy
     float *d_losses;
     CUDA_CHECK(cudaMalloc(&d_losses, sizeof(float) * batch_size));
-
     const float epsilon = 1e-12f;
 
     cross_entropy_kernel<<<(batch_size + 255) / 256, 256>>>(
-        d_soft, d_true, d_losses,
-        batch_size,
-        num_classes,
-        num_classes, 1, // Contiguo: fila mayor
+        d_soft, d_true, d_weights,
+        d_losses,
+        batch_size, num_classes,
+        num_classes, 1,
         num_classes, 1,
         epsilon);
 
     CUDA_CHECK(cudaGetLastError());
 
-    // === Parte 3: Reducir pérdidas ===
     std::vector<float> h_losses(batch_size);
     CUDA_CHECK(cudaMemcpy(h_losses.data(), d_losses, sizeof(float) * batch_size, cudaMemcpyDeviceToHost));
 
     float total_loss = std::accumulate(h_losses.begin(), h_losses.end(), 0.0f);
     total_loss /= static_cast<float>(batch_size);
 
-    // === Liberar memoria ===
+    // Free GPU memory
     CUDA_CHECK(cudaFree(d_in_soft));
     CUDA_CHECK(cudaFree(d_in_true));
     CUDA_CHECK(cudaFree(d_soft));
     CUDA_CHECK(cudaFree(d_true));
     CUDA_CHECK(cudaFree(d_losses));
+    if (d_weights)
+        CUDA_CHECK(cudaFree(d_weights));
 
     return total_loss;
 }
@@ -2405,4 +2411,351 @@ Tensor ce_backward_cuda(const Tensor &softmax_output_cpu, const Tensor &y_true_c
     CUDA_CHECK(cudaFree(d_grad));
 
     return grad_cpu;
+}
+
+__global__ void adam_update_1d_kernel(
+    float *param, const float *grad,
+    float *m, float *v,
+    size_t size,
+    float beta1, float beta2,
+    float beta1_t, float beta2_t,
+    float learning_rate, float epsilon,
+    float weight_decay)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= size)
+        return;
+
+    float g = grad[i];
+    if (weight_decay > 0.0f)
+        g += weight_decay * param[i];
+
+    m[i] = beta1 * m[i] + (1.0f - beta1) * g;
+    v[i] = beta2 * v[i] + (1.0f - beta2) * g * g;
+
+    float m_hat = m[i] / (1.0f - beta1_t);
+    float v_hat = v[i] / (1.0f - beta2_t);
+
+    param[i] -= learning_rate * m_hat / (sqrtf(v_hat) + epsilon);
+}
+
+__global__ void adam_update_2d_kernel(
+    float *param, const float *grad,
+    float *m, float *v,
+    size_t rows, size_t cols,
+    float beta1, float beta2,
+    float beta1_t, float beta2_t,
+    float learning_rate, float epsilon,
+    float weight_decay)
+{
+    int r = blockIdx.y * blockDim.y + threadIdx.y;
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (r >= rows || c >= cols)
+        return;
+
+    int idx = r * cols + c;
+    float g = grad[idx];
+    if (weight_decay > 0.0f)
+        g += weight_decay * param[idx];
+
+    m[idx] = beta1 * m[idx] + (1.0f - beta1) * g;
+    v[idx] = beta2 * v[idx] + (1.0f - beta2) * g * g;
+
+    float m_hat = m[idx] / (1.0f - beta1_t);
+    float v_hat = v[idx] / (1.0f - beta2_t);
+
+    param[idx] -= learning_rate * m_hat / (sqrtf(v_hat) + epsilon);
+}
+
+__global__ void adam_update_3d_kernel(
+    float *param, const float *grad,
+    float *m, float *v,
+    size_t D0, size_t D1, size_t D2,
+    float beta1, float beta2,
+    float beta1_t, float beta2_t,
+    float learning_rate, float epsilon,
+    float weight_decay)
+{
+    int i = blockIdx.z * blockDim.z + threadIdx.z;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i >= D0 || j >= D1 || k >= D2)
+        return;
+
+    size_t idx = i * D1 * D2 + j * D2 + k;
+
+    float g = grad[idx];
+    if (weight_decay > 0.0f)
+        g += weight_decay * param[idx];
+
+    m[idx] = beta1 * m[idx] + (1.0f - beta1) * g;
+    v[idx] = beta2 * v[idx] + (1.0f - beta2) * g * g;
+
+    float m_hat = m[idx] / (1.0f - beta1_t);
+    float v_hat = v[idx] / (1.0f - beta2_t);
+
+    param[idx] -= learning_rate * m_hat / (sqrtf(v_hat) + epsilon);
+}
+
+__global__ void adam_update_4d_kernel(
+    float *param, const float *grad,
+    float *m, float *v,
+    size_t D0, size_t D1, size_t D2, size_t D3,
+    float beta1, float beta2,
+    float beta1_t, float beta2_t,
+    float learning_rate, float epsilon,
+    float weight_decay)
+{
+    int i = blockIdx.z * blockDim.z + threadIdx.z;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i >= D0 || j >= D1 || k >= D2 * D3)
+        return;
+
+    int d2 = k / D3;
+    int d3 = k % D3;
+
+    size_t idx = ((i * D1 + j) * D2 + d2) * D3 + d3;
+
+    float g = grad[idx];
+    if (weight_decay > 0.0f)
+        g += weight_decay * param[idx];
+
+    m[idx] = beta1 * m[idx] + (1.0f - beta1) * g;
+    v[idx] = beta2 * v[idx] + (1.0f - beta2) * g * g;
+
+    float m_hat = m[idx] / (1.0f - beta1_t);
+    float v_hat = v[idx] / (1.0f - beta2_t);
+
+    param[idx] -= learning_rate * m_hat / (sqrtf(v_hat) + epsilon);
+}
+
+void adam_update_single_tensor_cuda(
+    Tensor &param_contig,
+    const Tensor &grad_contig,
+    Tensor &m_contig,
+    Tensor &v_contig,
+    float beta1, float beta2,
+    float beta1_t, float beta2_t,
+    float learning_rate, float epsilon,
+    float weight_decay)
+{
+    const std::vector<size_t> &shape = param_contig.getShape();
+    size_t total_size = param_contig.getSize();
+
+    if (total_size == 0)
+    {
+        std::cerr << "[adam_update_single_tensor_cuda] Skipping zero-sized tensor" << std::endl;
+        return;
+    }
+
+    float *d_param, *d_grad, *d_m, *d_v;
+    CUDA_CHECK(cudaMalloc(&d_param, total_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_grad, total_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_m, total_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_v, total_size * sizeof(float)));
+
+    CUDA_CHECK(cudaMemcpy(d_param, param_contig.getData(), total_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_grad, grad_contig.getData(), total_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_m, m_contig.getData(), total_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_v, v_contig.getData(), total_size * sizeof(float), cudaMemcpyHostToDevice));
+
+    if (shape.size() == 1)
+    {
+        size_t size = shape[0];
+        int threads = 256;
+        int blocks = (size + threads - 1) / threads;
+
+        adam_update_1d_kernel<<<blocks, threads>>>(
+            d_param, d_grad, d_m, d_v, size,
+            beta1, beta2, beta1_t, beta2_t,
+            learning_rate, epsilon, weight_decay);
+    }
+    else if (shape.size() == 2)
+    {
+        size_t rows = shape[0];
+        size_t cols = shape[1];
+        dim3 threads(32, 32);
+        dim3 blocks((cols + 31) / 32, (rows + 31) / 32);
+
+        adam_update_2d_kernel<<<blocks, threads>>>(
+            d_param, d_grad, d_m, d_v, rows, cols,
+            beta1, beta2, beta1_t, beta2_t,
+            learning_rate, epsilon, weight_decay);
+    }
+    else if (shape.size() == 3)
+    {
+        size_t D0 = shape[0], D1 = shape[1], D2 = shape[2];
+        dim3 threads(8, 8, 8);
+        dim3 blocks((D2 + 7) / 8, (D1 + 7) / 8, (D0 + 7) / 8);
+
+        adam_update_3d_kernel<<<blocks, threads>>>(
+            d_param, d_grad, d_m, d_v, D0, D1, D2,
+            beta1, beta2, beta1_t, beta2_t,
+            learning_rate, epsilon, weight_decay);
+    }
+    else if (shape.size() == 4)
+    {
+        size_t D0 = shape[0], D1 = shape[1], D2 = shape[2], D3 = shape[3];
+        dim3 threads(8, 8, 8);
+        dim3 blocks(
+            (D2 * D3 + 7) / 8,
+            (D1 + 7) / 8,
+            (D0 + 7) / 8);
+
+        adam_update_4d_kernel<<<blocks, threads>>>(
+            d_param, d_grad, d_m, d_v,
+            D0, D1, D2, D3,
+            beta1, beta2, beta1_t, beta2_t,
+            learning_rate, epsilon, weight_decay);
+    }
+    else
+    {
+        std::cerr << "[adam_update_single_tensor_cuda] Unsupported shape size: " << shape.size() << std::endl;
+        CUDA_CHECK(cudaFree(d_param));
+        CUDA_CHECK(cudaFree(d_grad));
+        CUDA_CHECK(cudaFree(d_m));
+        CUDA_CHECK(cudaFree(d_v));
+        return;
+    }
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(param_contig.getData(), d_param, total_size * sizeof(float), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(m_contig.getData(), d_m, total_size * sizeof(float), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(v_contig.getData(), d_v, total_size * sizeof(float), cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_param));
+    CUDA_CHECK(cudaFree(d_grad));
+    CUDA_CHECK(cudaFree(d_m));
+    CUDA_CHECK(cudaFree(d_v));
+}
+
+__global__ void gelu_forward_kernel(const float *input, float *output, size_t size)
+{
+    const float sqrt_2_over_pi = 0.7978845608028654f;
+
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < size)
+    {
+        float x = input[i];
+        float x_cubed = x * x * x;
+        float inner = sqrt_2_over_pi * (x + 0.044715f * x_cubed);
+        output[i] = 0.5f * x * (1.0f + tanhf(inner));
+    }
+}
+Tensor gelu_forward_cuda(const Tensor &input_cpu)
+{
+    if (!input_cpu.isContiguous())
+    {
+        throw std::runtime_error("gelu_forward_cuda solo soporta tensores contiguos.");
+    }
+
+    size_t size = input_cpu.getSize();
+    const std::vector<size_t> &shape = input_cpu.getShape();
+    const float *h_input = input_cpu.getDataPtr()->data();
+
+    // Crear tensor resultado en CPU
+    Tensor output_cpu(shape);
+    float *h_output = output_cpu.getData();
+
+    // Reservar memoria en GPU
+    float *d_input, *d_output;
+    CUDA_CHECK(cudaMalloc(&d_input, size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_output, size * sizeof(float)));
+
+    // Copiar input a GPU
+    CUDA_CHECK(cudaMemcpy(d_input, h_input, size * sizeof(float), cudaMemcpyHostToDevice));
+
+    // Configurar y lanzar kernel
+    int threads = 256;
+    int blocks = (size + threads - 1) / threads;
+    gelu_forward_kernel<<<blocks, threads>>>(d_input, d_output, size);
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // Copiar resultado a CPU
+    CUDA_CHECK(cudaMemcpy(h_output, d_output, size * sizeof(float), cudaMemcpyDeviceToHost));
+
+    // Liberar memoria
+    CUDA_CHECK(cudaFree(d_input));
+    CUDA_CHECK(cudaFree(d_output));
+
+    return output_cpu;
+}
+__global__ void gelu_backward_kernel(
+    const float *input,
+    const float *grad_output,
+    float *grad_input,
+    size_t size)
+{
+    const float sqrt_2_over_pi = 0.7978845608028654f;
+
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < size)
+    {
+        float x = input[i];
+        float x_squared = x * x;
+        float x_cubed = x_squared * x;
+
+        float inner = sqrt_2_over_pi * (x + 0.044715f * x_cubed);
+        float tanh_inner = tanhf(inner);
+
+        float d_inner_dx = sqrt_2_over_pi * (1.0f + 3.0f * 0.044715f * x_squared);
+        float sech_squared = 1.0f - tanh_inner * tanh_inner;
+
+        float dGELU_dx = 0.5f * (1.0f + tanh_inner) + 0.5f * x * sech_squared * d_inner_dx;
+
+        grad_input[i] = dGELU_dx * grad_output[i];
+    }
+}
+Tensor gelu_backward_cuda(const Tensor &input_cpu, const Tensor &grad_output_cpu)
+{
+    if (!input_cpu.isContiguous() || !grad_output_cpu.isContiguous())
+    {
+        throw std::runtime_error("gelu_backward_cuda requiere tensores contiguos.");
+    }
+
+    size_t size = input_cpu.getSize();
+    const std::vector<size_t> &shape = input_cpu.getShape();
+    const float *h_input = input_cpu.getDataPtr()->data();
+    const float *h_grad_output = grad_output_cpu.getDataPtr()->data();
+
+    // Crear tensor de salida en CPU
+    Tensor grad_input_cpu(shape);
+    float *h_grad_input = grad_input_cpu.getData();
+
+    // Reservar memoria en GPU
+    float *d_input, *d_grad_output, *d_grad_input;
+    CUDA_CHECK(cudaMalloc(&d_input, size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_grad_output, size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_grad_input, size * sizeof(float)));
+
+    // Copiar datos a GPU
+    CUDA_CHECK(cudaMemcpy(d_input, h_input, size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_grad_output, h_grad_output, size * sizeof(float), cudaMemcpyHostToDevice));
+
+    // Configurar kernel
+    int threads = 256;
+    int blocks = (size + threads - 1) / threads;
+
+    // Lanzar kernel
+    gelu_backward_kernel<<<blocks, threads>>>(d_input, d_grad_output, d_grad_input, size);
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // Copiar resultado a CPU
+    CUDA_CHECK(cudaMemcpy(h_grad_input, d_grad_input, size * sizeof(float), cudaMemcpyDeviceToHost));
+
+    // Liberar memoria
+    CUDA_CHECK(cudaFree(d_input));
+    CUDA_CHECK(cudaFree(d_grad_output));
+    CUDA_CHECK(cudaFree(d_grad_input));
+
+    return grad_input_cpu;
 }

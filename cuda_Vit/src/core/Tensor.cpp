@@ -1,5 +1,5 @@
 #include "core/Tensor.hpp"
-#include "utils/CudaUtils.hpp"
+#include "utils/CudaUtils.cuh"
 
 #include <algorithm>
 #include <iostream>
@@ -8,10 +8,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <cstring> // std::memcpy
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 // ===================================================================================
 // PARTE 1: CONSTRUCTORES, GETTERS, INICIALIZACIÓN Y UTILIDADES BÁSICAS
@@ -580,39 +576,39 @@ Tensor Tensor::sum(size_t axis) const
 void Tensor::addBroadcast(const Tensor &other)
 {
   // Caso 1: Broadcasting de {1, N} sobre {M, N}
-  if (this->shape.size() == 2 && other.getShape().size() == 2 && other.getShape()[0] == 1 &&
-      this->shape[1] == other.getShape()[1])
-  {
-#pragma omp parallel for
-    for (size_t i = 0; i < this->shape[0]; ++i)
-    {
-      for (size_t j = 0; j < this->shape[1]; ++j)
-      {
-        (*this)(i, j) += other(0, j);
-      }
-    }
-  }
-  // Caso 2: Broadcasting de {1, N, D} sobre {B, N, D}
-  else if (this->shape.size() == 3 && other.getShape().size() == 3 && other.getShape()[0] == 1 &&
-           this->shape[1] == other.getShape()[1] && this->shape[2] == other.getShape()[2])
-  {
-#pragma omp parallel for collapse(2)
-    for (size_t b = 0; b < this->shape[0]; ++b)
-    {
-      for (size_t n = 0; n < this->shape[1]; ++n)
-      {
-        for (size_t d = 0; d < this->shape[2]; ++d)
-        {
-          (*this)(b, n, d) += other(0, n, d);
-        }
-      }
-    }
-  }
-  else
-  {
-    throw std::runtime_error("Broadcasting no implementado para estas formas: " + this->shapeToString() + " y " +
-                             other.shapeToString());
-  }
+  //   if (this->shape.size() == 2 && other.getShape().size() == 2 && other.getShape()[0] == 1 &&
+  //       this->shape[1] == other.getShape()[1])
+  //   {
+  // #pragma omp parallel for
+  //     for (size_t i = 0; i < this->shape[0]; ++i)
+  //     {
+  //       for (size_t j = 0; j < this->shape[1]; ++j)
+  //       {
+  //         (*this)(i, j) += other(0, j);
+  //       }
+  //     }
+  //   }
+  //   // Caso 2: Broadcasting de {1, N, D} sobre {B, N, D}
+  //   else if (this->shape.size() == 3 && other.getShape().size() == 3 && other.getShape()[0] == 1 &&
+  //            this->shape[1] == other.getShape()[1] && this->shape[2] == other.getShape()[2])
+  //   {
+  // #pragma omp parallel for collapse(2)
+  //     for (size_t b = 0; b < this->shape[0]; ++b)
+  //     {
+  //       for (size_t n = 0; n < this->shape[1]; ++n)
+  //       {
+  //         for (size_t d = 0; d < this->shape[2]; ++d)
+  //         {
+  //           (*this)(b, n, d) += other(0, n, d);
+  //         }
+  //       }
+  //     }
+  //   }
+  //   else
+  //   {
+  //     throw std::runtime_error("Broadcasting no implementado para estas formas: " + this->shapeToString() + " y " +
+  //                              other.shapeToString());
+  //   }
 }
 
 // ===================================================================================

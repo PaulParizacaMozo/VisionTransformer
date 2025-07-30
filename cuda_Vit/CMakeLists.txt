@@ -18,8 +18,8 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build type: Debug, Release, RelWithDebInfo, MinSizeRel." FORCE)
 endif()
 
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic -Wno-unused-parameter -Wno-unused-variable")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --diag-suppress=177 --diag-suppress=550")
 
 # Flags específicos por tipo de compilación.
 # -O3: Máxima optimización para velocidad. -DNDEBUG: Desactiva las aserciones.
@@ -42,12 +42,13 @@ include_directories(include)
 file(GLOB_RECURSE CPP_SOURCES
     "src/*.cpp"
 )
-file(GLOB_RECURSE CUDA_SOURCES "src/utils/CudaUtils.cu")
+file(GLOB_RECURSE CUDA_SOURCES "src/**/*.cu" "src/*.cu")
 
-set(MAIN_SOURCE "app/main.cpp")
-set(TEST_SOURCE "app/test.cpp")
-set(TEST_IMAGE_SOURCE "app/testImage.cpp")
-set(TEST_LABEL_SOURCE "app/testLabel.cpp")
+
+set(MAIN_SOURCE "app/main.cu")
+set(TEST_SOURCE "app/test.cu")
+set(TEST_IMAGE_SOURCE "app/testImage.cu")
+set(TEST_LABEL_SOURCE "app/testLabel.cu")
 
 # --- Creación del Ejecutable ---
 add_executable(${PROJECT_NAME} ${MAIN_SOURCE} ${CPP_SOURCES} ${CUDA_SOURCES})

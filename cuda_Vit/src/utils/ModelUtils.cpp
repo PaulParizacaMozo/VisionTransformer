@@ -1,5 +1,5 @@
 #include "utils/ModelUtils.hpp"
-#include "utils/CudaUtils.hpp"
+#include "utils/CudaUtils.cuh"
 #include <fstream>
 #include <iostream>
 #include <iomanip>
@@ -12,7 +12,7 @@ using json = nlohmann::json;
 namespace ModelUtils
 {
 
-  void save_weights(const VisionTransformer &model, const std::string &filePath)
+  void save_weights(const VisionTransformer &model, const std::string &filePath, bool train)
   {
     std::ofstream outFile(filePath, std::ios::binary);
     if (!outFile)
@@ -26,8 +26,8 @@ namespace ModelUtils
     // Esto es seguro porque sabemos que getParameters() no modifica el estado del modelo.
     VisionTransformer &non_const_model = const_cast<VisionTransformer &>(model);
     auto params = non_const_model.getParameters();
-
-    std::cout << "Guardando " << params.size() << " tensores de parámetros en " << filePath << "..." << std::endl;
+    if (train == false)
+      std::cout << "Guardando " << params.size() << " tensores de parámetros en " << filePath << "..." << std::endl;
 
     for (const auto &tensor_ptr : params)
     {
@@ -47,7 +47,8 @@ namespace ModelUtils
       // Si el tensor no es contiguo, creamos una copia temporal para guardar.
       if (!tensor.isContiguous())
       {
-        std::cerr << "Advertencia: Guardando un tensor no contiguo. Se creará una copia temporal." << std::endl;
+        if (train == false)
+          std::cerr << "Advertencia: Guardando un tensor no contiguo. Se creará una copia temporal." << std::endl;
         Tensor temp = contiguous_cuda(tensor);
         // Tensor temp = tensor.contiguous();
         // if (verify(temp, temp_cuda, 1e-5f) == false)
@@ -64,7 +65,8 @@ namespace ModelUtils
     }
 
     outFile.close();
-    std::cout << "Pesos guardados correctamente." << std::endl;
+    if (train == false)
+      std::cout << "Pesos guardados correctamente." << std::endl;
   }
 
   void load_weights(VisionTransformer &model, const std::string &filePath)
@@ -123,9 +125,10 @@ namespace ModelUtils
     std::cout << "Pesos cargados correctamente." << std::endl;
   }
 
-  void save_config(const ViTConfig &config, const std::string &filePath)
+  void save_config(const ViTConfig &config, const std::string &filePath, bool train)
   {
-    std::cout << "Guardando configuración del modelo en: " << filePath << "..." << std::endl;
+    if (train == false)
+      std::cout << "Guardando configuración del modelo en: " << filePath << "..." << std::endl;
 
     json j = config; // Conversión automática gracias a nuestra función to_json
 
@@ -139,7 +142,8 @@ namespace ModelUtils
     outFile << std::setw(4) << j << std::endl;
     outFile.close();
 
-    std::cout << "Configuración guardada correctamente." << std::endl;
+    if (train == false)
+      std::cout << "Configuración guardada correctamente." << std::endl;
   }
 
   ViTConfig load_config(const std::string &filePath)
@@ -162,13 +166,15 @@ namespace ModelUtils
     return config;
   }
 
-  void print_hyperparameters_box(const ViTConfig& model_config, const TrainerConfig& train_config) {
+  void print_hyperparameters_box(const ViTConfig &model_config, const TrainerConfig &train_config)
+  {
     const int name_width = 30;
     const int value_width = 20;
 
-    auto print_row = [&](const std::string& name, const std::string& value) {
-        std::cout << "║ " << std::left << std::setw(name_width) << name
-                  << " : " << std::right << std::setw(value_width) << value << " ║\n";
+    auto print_row = [&](const std::string &name, const std::string &value)
+    {
+      std::cout << "║ " << std::left << std::setw(name_width) << name
+                << " : " << std::right << std::setw(value_width) << value << " ║\n";
     };
 
     std::string border(name_width + value_width + 5, '=');

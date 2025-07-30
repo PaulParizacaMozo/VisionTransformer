@@ -1,7 +1,7 @@
 #ifndef RELU_HPP
 #define RELU_HPP
 
-#include "layers/Layer.hpp"
+#include "layers/Layer.cuh"
 
 /**
  * @class ReLU
@@ -14,7 +14,8 @@
  * No tiene parámetros entrenables. Como otras activaciones, se implementa como
  * una capa para que pueda ser integrada fácilmente en un modelo secuencial.
  */
-class ReLU : public Layer {
+class ReLU : public Layer
+{
 public:
   /** @brief Constructor por defecto. */
   ReLU();

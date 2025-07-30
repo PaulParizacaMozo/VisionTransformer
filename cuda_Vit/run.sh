@@ -99,9 +99,9 @@ elif [ "$1" == "label" ]; then
   run_label "$2"
 elif [ "$1" == "visualizer" ]; then
   # solo si se tiene opencv instalado
-  # cd app
-  # g++ realTime.cpp -o realTime `pkg-config --cflags --libs opencv4` 
-  # cd ..
+  cd app
+  g++ realTime.cpp -o realTime `pkg-config --cflags --libs opencv4` 
+  cd ..
   ./app/realTime
 else
   build_project
