@@ -42,11 +42,28 @@ int main()
                                 model_config.num_classes,
                                 0.1307f, 0.3081f);
 
+    // auto [train_data, valid_data] =
+    //     load_csv_data_train_val("data/fashion_train.csv",
+    //                             1.0f,  // sample_frac   → 25 % del total
+    //                             0.80f, // train_frac    → 80 % de ese 30%
+    //                             0.20f, // val_frac      → 20 % de ese 30%
+    //                             1,
+    //                             28,
+    //                             28,
+    //                             model_config.num_classes,
+    //                             0.1307f, 0.3081f);
+
     // Para bloodmnist 3x28x28
     // auto train_data =
-    //    load_csv_data("data/bloodmnist_train.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
+    //     load_csv_data("data/bloodmnist_train.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
     // auto valid_data =
-    //    load_csv_data("data/bloodmnist_val.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
+    //     load_csv_data("data/bloodmnist_val.csv", 1.00f, 3, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
+
+    // Para bloodmnist 1x28x28
+    // auto train_data =
+    //     load_csv_data("data/bloodmnist_train_gray.csv", 1.00f, 1, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
+    // auto valid_data =
+    //     load_csv_data("data/bloodmnist_val_gray.csv", 1.00f, 1, 28, 28, model_config.num_classes, 0.1307f, 0.3081f);
 
     auto class_weights = compute_class_weights(train_data.second);
     ModelUtils::print_hyperparameters_box(model_config, train_config);
@@ -58,7 +75,7 @@ int main()
 
     // --- 4. Ejecutar el Entrenamiento y la Evaluación ---
 
-    const std::string model_name = "vit_mnist_test";
+    const std::string model_name = "models/vit_blood_gray_test";
     const std::string weights_path = model_name + ".weights";
     const std::string config_path = model_name + ".json";
     const std::string best_config_path = model_name + "_best.json";

@@ -101,9 +101,10 @@ void Trainer::train(const std::pair<Tensor, Tensor> &train_data,
 
     // Registrar en el logger
     logger.log_epoch(epoch, config.epochs, train_loss, train_acc, test_loss, test_acc);
-    if (test_acc > best_test_acc)
+    if (test_acc > best_test_acc && test_acc > train_acc)
     {
       ModelUtils::save_weights(model, best_weights_path, true);
+      best_test_acc = test_acc;
     }
     auto ms_total = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     int h = static_cast<int>(ms_total / 3600000);

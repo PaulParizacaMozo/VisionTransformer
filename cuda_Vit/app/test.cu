@@ -73,7 +73,7 @@ int main()
 {
   try
   {
-    const std::string model_name = "vit_mnist_test";
+    const std::string model_name = "vit_mnist_test_best";
     const std::string weights_path = model_name + ".weights";
     const std::string config_path = model_name + ".json";
 
@@ -92,6 +92,12 @@ int main()
     // --- 3. Cargar datos de prueba ---
     auto test_data =
         load_csv_data("data/mnist_test.csv", 1.00f, 1, 28, 28, loaded_config.num_classes, 0.1307f, 0.3081f);
+    // auto test_data =
+    //     load_csv_data("data/fashion_test.csv", 1.00f, 1, 28, 28, loaded_config.num_classes, 0.1307f, 0.3081f);
+    // auto test_data =
+    //     load_csv_data("data/bloodmnist_test.csv", 1.00f, 3, 28, 28, loaded_config.num_classes, 0.1307f, 0.3081f);
+    // auto test_data =
+    //     load_csv_data("data/bloodmnist_test_gray.csv", 1.00f, 1, 28, 28, loaded_config.num_classes, 0.1307f, 0.3081f);
 
     // --- 3. Hacer predicciones ---
     const Tensor &X_test = test_data.first;

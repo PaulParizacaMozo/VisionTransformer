@@ -1,0 +1,11 @@
+{
+    "dropout_rate": 0.20000000298023224,
+    "embedding_dim": 96,
+    "image_size": 28,
+    "in_channels": 1,
+    "mlp_hidden_dim": 384,
+    "num_classes": 10,
+    "num_heads": 8,
+    "num_layers": 8,
+    "patch_size": 14
+}
